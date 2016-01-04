@@ -181,49 +181,15 @@ public class StsPickPatch extends StsMainObject
 
     public void setPickType(byte pickType) { this.pickType = pickType; }
     public byte getPickType() { return pickType; }
-/*
-    public void setPickTypeName(String pickTypeName)
-    {
-        for(byte n = 0; n < 4; n++)
-        {
-            if(pickTypeName.equals(pickTypeNames[n]))
-            {
-                pickType = n;
-                break;
-            }
-        }
-    }
-    public String getPickTypeName() { return pickTypeNames[pickType]; }
 
-    public void setStopCriteriaName(String stopCriteriaName)
-    {
-        for(byte n = 0; n < 4; n++)
-        {
-            if(stopCriteriaName.equals(stopCriteriaNames[n]))
-            {
-                stopCriteria = n;
-                break;
-            }
-        }
-    }
-    public String getStopCriteriaName() { return stopCriteriaNames[stopCriteria]; }
-*/
     public void setWindowSize(int windowSize) { this.windowSize = windowSize; }
     public int getWindowSize() { return windowSize; }
 
     public float getMaxPickDif() { return maxPickDif; }
     public void setMaxPickDif(float maxPickDif) { this.maxPickDif = maxPickDif; }
-//    public byte getStopCriteria() { return stopCriteria; }
-//    public void setStopCriteria(byte stopCriteria) { this.stopCriteria = stopCriteria; }
 
     public StsHorpick getHorpick() { return horpick; }
 
-//    public byte[][] getPointsNull() { return pointsNull; }
-//    public float[][] getPointsZ() { return pointsZ; }
-//    public void setPointsZ(float[][] pointsZ) { this.pointsZ = pointsZ; }
-
     public int getNPatchTraces() { return nPatchTraces; }
     public void setNPatchTraces(int nPatchTraces) { this.nPatchTraces = nPatchTraces; }
-//    public int getNumberName() { return numberName; }
-//    public void setNumberName(int numberName) { this.numberName = numberName; }
 }

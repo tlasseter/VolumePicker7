@@ -123,8 +123,6 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 
 	transient float[] histogramValues;
 	transient int nHistogramValues = 10000;
-	/** min correl for which link will be drawn. Eventually will be user adjustable parameter. */
-	transient public float minDisplayCorrel = 0.0f;
 
 	static protected StsObjectPanel objectPanel = null;
 
@@ -136,18 +134,11 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 	public static final int largeInt = 99999999;
 
 	public static final String[] pickTypeNames = new String[]{"All", "Min+Max", "Maximum", "Minimum"}; //, "Zero-crossing+", "Zero-crossing-", "All"};
-	public static final String[] stopCriteriaNames = new String[]{"Stop", "Replace", "Stop if same Z"};
-	//static StsComboBoxFieldBean displayAttributeBean = new StsComboBoxFieldBean(StsPatchVolume.class, "displayAttribute", "Attribute");
 	static public final float badCurvature = StsPatchGrid.badCurvature;
 
 	public String getSeismicName()
 	{
 		return seismicName;
-	}
-
-	public void setSeismicName(String seismicName)
-	{
-		this.seismicName = seismicName;
 	}
 
 	static StsEditableColorscaleFieldBean colorscaleBean = new StsEditableColorscaleFieldBean(StsPatchVolume.class, "colorscale");
@@ -198,23 +189,13 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 	static final float largeFloat = StsParameters.largeFloat;
 
 	/** debugPatchGrid prints showing row operations */
-	static public final boolean debug = true;
+	static public final boolean debug = false;
 	/** turn on timer for values operation */
 	static final boolean runTimer = false;
 	/** millisecond timer */
 	static StsTimer timer;
-	/** debugPatchGrid for tracePoints linkList operations */
-	static final boolean debugTracePointsLink = false;
-	/** debugPatchGrid for CorrelationWindows */
-	static final boolean debugCorrelationWindows = false;
-	/** search for multiple windows */
-	static final boolean searchForMultipleWindowMatches = true;
 	/** print patch operations and draw only this patch */
-	static boolean drawPatchBold = debug && StsPatchGrid.debugPatchGrid; // StsPatchGrid.debugPatchGrid;
-	/** debug: allow point clone operations */
-	static final boolean debugCloneOK = true;
-	/** debug: add overlapping grids to group */
-	static final boolean debugOverlapGridGroupOK = false;
+	static boolean drawPatchBold = debug && StsPatchGrid.debugPatchGrid;
 	/** debug: connect closest points only */
 	static final boolean debugConnectCloseOnly = true;
 	static public String iterLabel = "";
@@ -247,7 +228,6 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		windowSize = pickPanel.corWavelength;
 		pickDifWavelengths = pickPanel.maxPickDif;
 		minAmpFraction = pickPanel.minAmpFraction;
-		float maxStretch = pickPanel.maxStretch;
 		pickType = pickPanel.pickType;
 		nPatchPointsMin = pickPanel.minPatchSize;
 		useFalseTypes = pickPanel.useFalseTypes;
@@ -302,8 +282,8 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 			volRow = croppedBoundingBox.rowMin;
 			TracePoints[] prevRowTracesPoints; // all traces in prev row
 			TracePoints[] rowTracesPoints = null; // all traces in this row
-			TracePoints rowPrevTracePoints = null; // trace in same row, prev col
-			TracePoints colPrevTracePoints = null; // trace in same col, prev row
+			TracePoints rowPrevTracePoints; // trace in same row, prev col
+			TracePoints colPrevTracePoints; // trace in same col, prev row
 			for (; volRow <= croppedBoundingBox.rowMax; row++, volRow++)
 			{
 				//statusArea.setProgress(row*40.f/nRows);
@@ -434,7 +414,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		}
 		// removedGrid could be parent, child, or new; it is being merged into mergedGrid which could be any of these three as well
 		// if removedGrid is a parent, then the first child needs to be made the parent
-		// if removed grid is a child, it needs to be removed from the parent
+		// if removed grid is a child, it needs to be removed from the immediate parent
 		// if new, we don't have to do anything
 
 		removedGrid.removeChildOrParent(mergedGrid);
@@ -446,7 +426,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		{
 			StsException.systemDebug(this, "mergePatchGrids", "debug patch removed; resetting debug patchID to merged ID " + mergedGrid.id);
 			StsPatchGrid.debugPatchID = mergedGrid.id;
-			mergedGrid.originalID = removedGrid.id;
+			// mergedGrid.originalID = removedGrid.id;
 		}
 		return mergedGrid;
 	}
@@ -1027,7 +1007,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 				if (drawPatchBold && patchGrid.id == StsPatchGrid.debugPatchID)
 					gl.glLineWidth(2 * getPatchVolumeClass().getEdgeWidth());
 				patchGrid.drawVolColGridLine(gl, volCol, colorscale, displayCurvature, false);
-				if (drawPatchBold && patchGrid.id == StsPatchGrid.debugPatchID) ;
+				if (drawPatchBold && patchGrid.id == StsPatchGrid.debugPatchID);
 				gl.glLineWidth(getPatchVolumeClass().getEdgeWidth());
 				// if (nFirst == -1) nFirst = n;
 			}
@@ -1041,9 +1021,6 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 			gl.glLineWidth(StsGraphicParameters.edgeLineWidth);
 			gl.glShadeModel(GL.GL_SMOOTH);
 
-			float y = dirCoordinate;
-			// int nFirst = -1;
-			// int n = -1;
 			for (StsPatchGrid patchGrid : rowSortedPatchGrids)
 			{
 				if (patchGrid.rowMin > row) break;
@@ -1051,7 +1028,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 				if (patchGrid.rowMax < row) continue;
 				if (drawPatchBold && patchGrid.id == StsPatchGrid.debugPatchID)
 					gl.glLineWidth(2 * getPatchVolumeClass().getEdgeWidth());
-				patchGrid.drawRowGridLine(gl, row, y, colorscale, displayCurvature, false);
+				patchGrid.drawRowGridLine(gl, row, dirCoordinate, colorscale, displayCurvature, false);
 				if (drawPatchBold && patchGrid.id == StsPatchGrid.debugPatchID) ;
 				gl.glLineWidth(getPatchVolumeClass().getEdgeWidth());
 				// if (nFirst == -1) nFirst = n;
@@ -1182,45 +1159,6 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		}
 	}
 
-	public void displayVoxelsCursor(StsGLPanel glPanel3d, StsPoint[] points, boolean is3d)
-	{
-		//System.out.println("Display Voxels");
-		GL gl = glPanel3d.getGL();
-		if (gl == null) return;
-		boolean displayCurvature = getPatchVolumeClass().getDisplayCurvature();
-		StsGridPoint point1 = new StsGridPoint(points[0], this);
-		StsGridPoint point2 = new StsGridPoint(points[3], this);
-		int sameRow = StsGridPoint.getSameRow(point1, point2); // if not -1, this is the row these two points are on
-		if (sameRow != -1)
-		{
-			gl.glDisable(GL.GL_LIGHTING);
-			gl.glLineWidth(StsGraphicParameters.edgeLineWidth);
-			glPanel3d.setViewShift(gl, StsGraphicParameters.gridShift);
-			gl.glColor4f(1.f, 1.f, 1.f, 1.f);
-
-			float y;
-
-			for (StsPatchGrid patchGrid : rowSortedPatchGrids)
-			{
-				int row1 = sameRow - 4;
-				int row2 = sameRow + 4;
-				y = yMin + (yInc * row1);
-				for (int n = row1; n <= row2; n++)
-				{
-					//if (n == 146)
-					//System.out.println("draw vox row "+n+" "+patchGrid.colMin+" "+patchGrid.colMax+" "+y);
-					patchGrid.drawRowGridLine(gl, n, y, colorscale, displayCurvature, is3d);
-					y += yInc;
-				}
-			}
-
-			glPanel3d.resetViewShift(gl);
-			gl.glEnable(GL.GL_LIGHTING);
-			return;
-		}
-
-	}
-
 	public void displayVoxels(StsGLPanel glPanel3d)
 	{
 		//System.out.println("Display Voxels");
@@ -1234,11 +1172,9 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 			gl.glColor4f(1.f, 1.f, 1.f, 1.f);
 			float xMin = getXMin();
 			float yMin = getYMin();
-			float yInc = getYInc();
 			for (StsPatchGrid patchGrid : rowSortedPatchGrids)
 				patchGrid.drawRowVox(gl, yMin, xMin, colorscale);
 			gl.glEnable(GL.GL_LIGHTING);
-			return;
 		}
 
 	}
@@ -1257,7 +1193,6 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 			if (patchGrid.isPatchGridNearZCursor(z))
 				patchGrid.draw(gl, displayCurvature, colorscale);
 		}
-		return;
 	}
 
 	private void initializePatchDraw(GL gl)
@@ -1289,7 +1224,6 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 			return;
 		}
 
-		cursorPoint = null;
 		currentCursorPoint = null;
 
 		int volumeRow = getNearestRowCoor(y);
@@ -1319,11 +1253,8 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 				}
 			}
 		}
-		if (cursorPointPatch == null) return;
-
-		drawPatch(cursorPointPatch, displayCurvature, gl);
-
-		return;
+		if (cursorPointPatch != null)
+				drawPatch(cursorPointPatch, displayCurvature, gl);
 	}
 
 	private void drawPatch(StsPatchGrid patch, boolean displayCurvature, GL gl)
@@ -1345,7 +1276,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		int rowMin = -1;
 		int rowMax = -1;
 		int nPatchGrids = rowSortedPatchGrids.length;
-		int n = 0;
+		int n;
 		for (n = 0; n < nPatchGrids; n++)
 		{
 			StsPatchGrid patchGrid = rowSortedPatchGrids[n];
@@ -1723,12 +1654,11 @@ class TracePoints
 					nMissing = getNMissingPoints(prevPoint, nextPoint);
 					if( nMissing > 0)
 					{
-						byte pointTypeStart = StsTraceUtilities.pointTypesAfter[prevPoint.pointType];
-						byte missingType = pointTypeStart;
+						byte missingType = StsTraceUtilities.pointTypesAfter[prevPoint.getPointType()];
 						for (int i = 0; i < nMissing; i++, missingType++)
 						{
 							if (missingType > 4) missingType -= 4;
-							addedPoints[nTracePatchPoint] = new PatchPoint(prevPoint, missingType, nTracePatchPoint);
+							addedPoints[nTracePatchPoint] = new PatchPoint(this, prevPoint, missingType, nTracePatchPoint);
 							nTracePatchPoint++;
 						}
 					}
@@ -1745,7 +1675,7 @@ class TracePoints
 
 			if(tracePatchPoints.length < 2)  throw new StsException("TracePoints.constructor()", "Less than 2 tracePatchPoints.");
 
-			zeroPlusOffset = StsTraceUtilities.zeroPlusOffset[tracePatchPoints[0].pointType];
+			zeroPlusOffset = StsTraceUtilities.zeroPlusOffset[tracePatchPoints[0].getPointType()];
 			constructTraceWindows();
 		}
 		catch (StsException stse)
@@ -1771,22 +1701,14 @@ class TracePoints
 		}
 	}
 
-	static public boolean pointsNotInSequence(PatchPoint prevPoint, PatchPoint nextPoint)
-	{
-		if(prevPoint == null || nextPoint == null) return false;
-		byte prevType = StsTraceUtilities.coercedPointTypes[prevPoint.pointType];
-		byte nextType = StsTraceUtilities.coercedPointTypes[nextPoint.pointType];
-		return StsTraceUtilities.pointTypesAfter[prevType] != nextType;
-	}
-
 	static int getNMissingPoints(PatchPoint prevPoint, PatchPoint nextPoint)
 	{
 		if(prevPoint == null || nextPoint == null) return 0;
-		byte prevType = StsTraceUtilities.coercedPointTypes[prevPoint.pointType];
-		byte nextType = StsTraceUtilities.coercedPointTypes[nextPoint.pointType];
+		byte prevType = StsTraceUtilities.coercedPointTypes[prevPoint.getPointType()];
+		byte nextType = StsTraceUtilities.coercedPointTypes[nextPoint.getPointType()];
 		if(StsTraceUtilities.pointTypesAfter[prevType] == nextType) return 0;
-		byte pointTypeStart = StsTraceUtilities.pointTypesAfter[prevPoint.pointType];
-		byte pointTypeEnd = StsTraceUtilities.pointTypesBefore[nextPoint.pointType];
+		byte pointTypeStart = StsTraceUtilities.pointTypesAfter[prevPoint.getPointType()];
+		byte pointTypeEnd = StsTraceUtilities.pointTypesBefore[nextPoint.getPointType()];
 		return StsTraceUtilities.getNumPointTypesBetweenInclusive(pointTypeStart, pointTypeEnd);
 	}
 
@@ -1861,7 +1783,7 @@ class TracePoints
 					connectWindows[n] = null;
 					otherConnectWindows[otherIndex] = null;
 				}
-				else if(lastWindow != null && prevWindow.getCenterPoint().slice <= lastWindow.getCenterPoint().slice)
+				else if(lastWindow != null && prevWindow.getCenterPoint().getSlice() <= lastWindow.getCenterPoint().getSlice())
 					connectWindows[n] = null;
 				else
 					lastWindow = prevWindow;
@@ -1884,19 +1806,6 @@ class TracePoints
 		}
 	}
 
-	static void checkCrossings(CorrelationWindow[] connectWindows, int nextIndex)
-	{
-		if(nextIndex == 0) return;
-
-		int prevSlice = -1, slice, nextSlice;
-		if(nextIndex > 1)
-			prevSlice = connectWindows[nextIndex - 2].getCenterPoint().slice;
-		slice = connectWindows[nextIndex - 1].getCenterPoint().slice;
-		nextSlice = connectWindows[nextIndex].getCenterPoint().slice;
-		if(prevSlice >=slice || nextSlice <= slice)
-			connectWindows[nextIndex-1] = null;
-	}
-
 	CorrelationWindow[] createClosestConnectWindows(TracePoints prevTrace)
 	{
 		CorrelationWindow[] closeConnectWindows = new CorrelationWindow[nWindows];
@@ -1915,8 +1824,7 @@ class TracePoints
 				CorrelationWindow prevWindow = window.getClosestWindow(prevWindowAbove, prevWindowBelow);
 				closeConnectWindows[i] = prevWindow;
 			}
-			else if (window.isAboveOrEqual(prevWindowAbove)) continue;
-			else // nextWindow is below prevWindowBelow, so move prevWindows down
+			else if (!window.isAboveOrEqual(prevWindowAbove)) // nextWindow is below prevWindowBelow, so move prevWindows down
 			{
 				while (window.isBelowOrEqual(prevWindowBelow) && otherNextIndex < nPrevWindows)
 				{
@@ -1952,17 +1860,17 @@ class TracePoints
 		{
 			CorrelationWindow prevWindow = closeConnectWindows[i];
 			if(prevWindow == null) continue;
-			windows[i].computeCorrelation(prevWindow, patchVolume.autoCorInc);
+			windows[i].computeCorrelation(prevWindow);
 		}
 		return closeConnectWindows;
 	}
 
 	private CorrelationWindow prevWindowIsInside(CorrelationWindow window, CorrelationWindow prevWindow)
 	{
-		int prevWindowCenterSlice = prevWindow.getCenterPoint().slice;
-		int prevPointSlice = getPrevWindow(window).getCenterPoint().slice;
+		int prevWindowCenterSlice = prevWindow.getCenterPoint().getSlice();
+		int prevPointSlice = getPrevWindow(window).getCenterPoint().getSlice();
 		if(prevWindowCenterSlice < prevPointSlice) return null;
-		int nextPointSlice = getNextWindow(window).getCenterPoint().slice;
+		int nextPointSlice = getNextWindow(window).getCenterPoint().getSlice();
 		if(prevWindowCenterSlice > nextPointSlice) return null;
 		return prevWindow;
 	}
@@ -1989,14 +1897,14 @@ class TracePoints
 				if (prevColTrace != null && !window.hasColConnection())
 				{
 					otherClosestWindow = colCloseConnectWindows[n];
-					connectedWindowAbove = colConnections.connectionAbove.prevWindow;
-					connectedWindowBelow = colConnections.connectionBelow.prevWindow;
+					connectedWindowAbove = colConnections.connectionAbove.getPrevWindow();
+					connectedWindowBelow = colConnections.connectionBelow.getPrevWindow();
 					matchingWindow = TracePoints.connectWindows(patchVolume, window, otherClosestWindow, prevColTrace, connectedWindowAbove, connectedWindowBelow, iter);
 					if (matchingWindow != null && patchVolume.checkBackMatch)
 					{
 						closestWindow = prevColTrace.colCloseConnectWindows[matchingWindow.windowIndex];
-						connectedWindowAbove = prevColTrace.colConnections.connectionAbove.nextWindow;
-						connectedWindowBelow = prevColTrace.colConnections.connectionBelow.nextWindow;
+						connectedWindowAbove = prevColTrace.colConnections.connectionAbove.getNextWindow();
+						connectedWindowBelow = prevColTrace.colConnections.connectionBelow.getNextWindow();
 						backMatchingWindow = TracePoints.connectWindows(patchVolume, matchingWindow, closestWindow, this, connectedWindowAbove, connectedWindowBelow, iter);
 						if (backMatchingWindow != null && backMatchingWindow != window && backMatchingWindow.stretchCorrelation >= matchingWindow.stretchCorrelation)
 							matchingWindow = null;
@@ -2008,14 +1916,14 @@ class TracePoints
 				if (prevRowTrace != null && !window.hasRowConnection())
 				{
 					otherClosestWindow = rowCloseConnectWindows[n];
-					connectedWindowAbove = rowConnections.connectionAbove.prevWindow;
-					connectedWindowBelow = rowConnections.connectionBelow.prevWindow;
+					connectedWindowAbove = rowConnections.connectionAbove.getPrevWindow();
+					connectedWindowBelow = rowConnections.connectionBelow.getPrevWindow();
 					matchingWindow = TracePoints.connectWindows(patchVolume, window, otherClosestWindow, prevRowTrace, connectedWindowAbove, connectedWindowBelow, iter);
 					if (matchingWindow != null && patchVolume.checkBackMatch)
 					{
 						closestWindow = prevRowTrace.rowCloseConnectWindows[matchingWindow.windowIndex];
-						connectedWindowAbove = prevRowTrace.rowConnections.connectionAbove.nextWindow;
-						connectedWindowBelow = prevRowTrace.rowConnections.connectionBelow.nextWindow;
+						connectedWindowAbove = prevRowTrace.rowConnections.connectionAbove.getNextWindow();
+						connectedWindowBelow = prevRowTrace.rowConnections.connectionBelow.getNextWindow();
 						backMatchingWindow = TracePoints.connectWindows(patchVolume, matchingWindow, closestWindow, this, connectedWindowAbove, connectedWindowBelow, iter);
 						if (backMatchingWindow != null && backMatchingWindow != window && backMatchingWindow.stretchCorrelation >= matchingWindow.stretchCorrelation)
 							matchingWindow = null;
@@ -2073,8 +1981,8 @@ class TracePoints
 
 	static boolean rowConnectionIsBetter(Connection rowConnection, Connection colConnection)
 	{
-		CorrelationWindow rowWindow = rowConnection.nextWindow;
-		CorrelationWindow colWindow = colConnection.nextWindow;
+		CorrelationWindow rowWindow = rowConnection.getNextWindow();
+		CorrelationWindow colWindow = colConnection.getNextWindow();
 
 		if(rowWindow.amplitudeRatio > 2*colWindow.amplitudeRatio) return true;
 		if(rowWindow.amplitudeRatio < 0.5*colWindow.amplitudeRatio) return false;
@@ -2107,9 +2015,6 @@ class TracePoints
 		int aboveWindowIndex, belowWindowIndex;
 		// candidate matching windows above and below
 		CorrelationWindow aboveOtherWindow, belowOtherWindow;
-		// having found a matchingWindow, try matching it back to the newTrace to see if we find a different connection with a better stretchCorrelation
-		// if we do find it, we ignore this match completely and let the search find it directly (rather than backMatching to find it)
-		CorrelationWindow backMatchingWindow;
 
 		try
 		{
@@ -2161,10 +2066,7 @@ class TracePoints
 			// centerOtherWindow is between above and below connection points on otherTrace, so compute stretchCorrelation with nextWindow on this trace
 			// this centerOtherWindow has already been determined to be the closest if their are two bracketing windows (@see
 			if (newWindow.correlationOK(correlation, correlPenalty, minAmplitudeRatio))
-			{
 				matchingWindow = centerOtherWindow;
-				correlation = centerOtherWindow.stretchCorrelation;
-			}
 
 			if(StsPatchVolume.debugConnectCloseOnly)
 				return matchingWindow;
@@ -2187,10 +2089,7 @@ class TracePoints
 			{
 				belowOtherWindow = otherTrace.windows[belowWindowIndex];
 				if (newWindow.correlationOK(correlation, correlPenalty, minAmplitudeRatio))
-				{
 					matchingWindow = belowOtherWindow;
-					correlation = belowOtherWindow.stretchCorrelation;
-				}
 			}
 			return matchingWindow;
 		}
@@ -2201,64 +2100,9 @@ class TracePoints
 		}
 	}
 
-	static CorrelationWindow getCenterOtherWindow(CorrelationWindow newWindow, TracePoints otherTrace, ConnectionList connectionList)
-	{
-		// center candidate nextWindow for matching
-		CorrelationWindow centerOtherWindow;
-		// bounding connections above and below which this connection cannot cross
-		Connection connectionAbove, connectionBelow;
-		// trace this new nextWindow is on
-		TracePoints newTrace;
-		// points on connections above and below
-		PatchPoint newPointAbove, otherPointAbove, otherPointBelow;
-		// offset from connectionAbove.point.traceIndex to the newWindow.centerPoint.traceIndex
-		int newWindowIndexOffset;
-		// index of candidate centerOtherWindow
-		int centerOtherWindowIndex;
-		// offset from the pointType at the parallel offset on the otherTrace from connectionAbove to the pointType we want on otherTrace
-		int pointTypeOffset;
-		// total offset including windowIndexOffset and pointTypeOffset
-		int offset;
-
-		connectionAbove = connectionList.connectionAbove;
-		newTrace = newWindow.getCenterPoint().tracePoints;
-		newPointAbove = connectionAbove.getWindowCenterPoint(newTrace);
-		// newWindowIndexOffset is offset from connectionAbove to this newWindow.centerPoint
-		newWindowIndexOffset = newWindow.windowIndex - newPointAbove.traceIndex;
-		otherPointAbove = connectionAbove.getWindowCenterPoint(otherTrace);
-		// compute offset to point on otherTrace which is parallel to connectionAbove and displaced down to newWindow
-		// so the point is located newWindowIndexOffset below the otherPointAbove.traceIndex
-		centerOtherWindowIndex = otherPointAbove.traceIndex + newWindowIndexOffset;
-		if(centerOtherWindowIndex >= otherTrace.nWindows)
-			centerOtherWindowIndex -= 4;
-		centerOtherWindow = otherTrace.windows[centerOtherWindowIndex];
-		// depending on the type here, we want to further offset from the type at this point to the desired type
-		// which is equal to the numerical difference in type byte values
-		// offset is always positive and is 0,1,2, or 3; if 0 or 1, use this offset; otherwise for 2, or 3, offset -2 or -1 respectively (offset-4)
-		pointTypeOffset = getPointTypeDif(newWindow, centerOtherWindow);
-		if (pointTypeOffset >= 2) pointTypeOffset -= 4;
-		// the total offset is the shift from the connetionAbove (newWindowIndexOffset) plus the pointTypeOffset
-		offset = newWindowIndexOffset + pointTypeOffset;
-		if (offset < 1) offset += 4;
-		centerOtherWindowIndex = otherPointAbove.traceIndex + offset;
-		connectionBelow = connectionList.connectionBelow;
-		otherPointBelow = connectionBelow.getWindowCenterPoint(otherTrace);
-
-		if(centerOtherWindowIndex < otherPointBelow.traceIndex)
-			return otherTrace.windows[centerOtherWindowIndex];
-
-		while(centerOtherWindowIndex > otherPointAbove.traceIndex)
-		{
-			centerOtherWindowIndex -= 4;
-			if(centerOtherWindowIndex < otherPointBelow.traceIndex)
-				return otherTrace.windows[centerOtherWindowIndex];
-		}
-		return null;
-	}
-
 	static int getPointTypeDif(CorrelationWindow newWindow, CorrelationWindow prevWindow)
 	{
-		int typeDif = newWindow.getCenterPoint().pointType - prevWindow.getCenterPoint().pointType;
+		int typeDif = newWindow.getCenterPoint().getPointType() - prevWindow.getCenterPoint().getPointType();
 		if(typeDif < 0) typeDif += 4;
 		return typeDif;
 	}
@@ -2269,16 +2113,16 @@ class TracePoints
 	 * If the previousPatchPoint is part of a patchGrid we will add the newPatchPoint to this patchGrid, unless the newPatchPoint already belongs to another patchGrid
 	 * (this occurs when we first correlate with the previous column and find one patchGrid and also correlate with the previous row and find a different patchGrid).
 	 */
-	public Connection addPatchConnection(Connection connection, ConnectionList connectionList, boolean isRow)
+	public Connection addPatchConnection(Connection connection, ConnectionList connectionList)
 	{
-		StsPatchGrid patchGrid = null;
+		StsPatchGrid patchGrid;
 
 		if(connectionList.connectionsCross(connection)) return null;
 
 		PatchPoint newPatchPoint = connection.getNextPoint();
 		PatchPoint otherPatchPoint = connection.getPrevPoint();
 
-		double distance = Math.abs(otherPatchPoint.slice - newPatchPoint.slice);
+		double distance = Math.abs(otherPatchPoint.getSlice() - newPatchPoint.getSlice());
 
 		if(distance > 20)
 			StsException.systemDebug(this, "addPatchConnection", "DISTANCE LARGE FOR Connection: " + connection.toString());
@@ -2306,7 +2150,7 @@ class TracePoints
 				// So create a new patch and add a clone of the otherPatchPoint
 				if (otherPatchGrid.patchPointOverlaps(newPatchPoint)) // return null;
 				{
-					patchGrid = StsPatchGrid.construct(patchVolume, newPatchPoint.pointType);
+					patchGrid = StsPatchGrid.construct(patchVolume, newPatchPoint.getPointType());
 					patchGrid.addChangePatchPoint(newPatchPoint);
 				/*
 					if (StsPatchVolume.debugCloneOK)
@@ -2410,58 +2254,6 @@ class TracePoints
 		//	return null;
 	}
 
-	private void addConnectionBetweenPatches(Connection connection)
-	{
-		PatchPoint newPatchPoint = connection.getNextPoint();
-		PatchPoint otherPatchPoint = connection.getPrevPoint();
-
-		StsPatchGrid newPatchGrid = newPatchPoint.patchGrid;
-		StsPatchGrid otherPatchGrid = otherPatchPoint.patchGrid;
-		otherPatchGrid.checkAddPatchPoint(newPatchPoint);
-		newPatchGrid.checkAddPatchPoint(otherPatchPoint);
-	}
-
-	class WindowPointTypeForwardIterator implements Iterator<CorrelationWindow>
-	{
-		byte pointType;
-		CorrelationWindow window;
-		int otherIndexBelow;
-
-		WindowPointTypeForwardIterator(byte pointType, CorrelationWindow window, ConnectionList connectionList)
-		{
-			this.pointType = pointType;
-			this.window = window;
-			otherIndexBelow = connectionList.getOtherPointIndexBelow();
-			initialize(connectionList);
-		}
-
-		void initialize(ConnectionList connectionList)
-		{
-			if(window.getCenterPoint().pointType == pointType) return;
-			window = getWindowBelowOfType(window, pointType, otherIndexBelow);
-		}
-
-		public boolean hasNext()
-		{
-			return window != null;
-		}
-
-		public CorrelationWindow next()
-		{
-			CorrelationWindow currentWindow = window;
-			window = getWindowBelowOfType(window, pointType, otherIndexBelow);
-			return currentWindow;
-		}
-
-		public void remove() {}
-	}
-
-	CorrelationWindow getWindowOfTypeAbove(CorrelationWindow window, ConnectionList connectionList)
-	{
-		Iterator<CorrelationWindow> backwardIterator = new WindowPointTypeBackwardIterator(window.getCenterPoint().pointType, window, connectionList);
-		return backwardIterator.next();
-	}
-
 	CorrelationWindow getNextWindow(CorrelationWindow window)
 	{
 		int index = window.windowIndex + 1;
@@ -2474,58 +2266,6 @@ class TracePoints
 		int index = window.windowIndex - 1;
 		if(index < 0) return window;
 		return windows[index];
-	}
-
-	class WindowPointTypeBackwardIterator implements Iterator<CorrelationWindow>
-	{
-		byte pointType;
-		CorrelationWindow window;
-		int otherIndexBelow;
-
-		WindowPointTypeBackwardIterator(byte pointType, CorrelationWindow window, ConnectionList connectionList)
-		{
-			this.pointType = pointType;
-			this.window = window;
-			otherIndexBelow = connectionList.getOtherPointIndexBelow();
-			if(window.getCenterPoint().pointType == pointType) return;
-			this.window = getWindowAboveOfType(window, pointType, otherIndexBelow);
-		}
-
-		public boolean hasNext()
-		{
-			return window != null;
-		}
-
-		public CorrelationWindow next()
-		{
-			CorrelationWindow currentWindow = window;
-			window = getWindowAboveOfType(window, pointType, otherIndexBelow);
-			return currentWindow;
-		}
-
-		public void remove() {}
-	}
-
-	CorrelationWindow getWindowBelowOfType(CorrelationWindow window, byte pointType, int otherIndexBelow)
-	{
-		if(window == null) return null;
-		int otherIndex = window.windowIndex;
-		for(int i = otherIndex+1; i <= otherIndexBelow-1; i++)
-			if(windows[i].getCenterPoint().pointType == pointType) return windows[i];
-		return null;
-	}
-
-	CorrelationWindow getWindowAboveOfType(CorrelationWindow window, byte pointType, int otherIndexAbove)
-	{
-		int otherIndex = window.windowIndex;
-		for(int i = otherIndex-1; i >= otherIndexAbove+1; i--)
-			if(windows[i].getCenterPoint().pointType == pointType) return windows[i];
-		return null;
-	}
-
-	int getBoundedIndex(int windowIndex)
-	{
-		return StsMath.minMax(windowIndex, 0, nWindows);
 	}
 
 	/** For this new nextWindow, we may have a new row and/or col connection or no connection.
@@ -2545,13 +2285,13 @@ class TracePoints
 			// by inserting this connection into it
 			if (colConnection != null)
 			{
-				colConnection = addPatchConnection(colConnection, colConnections, false);
+				colConnection = addPatchConnection(colConnection, colConnections);
 				if(colConnection != null) colConnections.insert(colConnection);
 
 			}
 			if (rowConnection != null)
 			{
-				rowConnection = addPatchConnection(rowConnection, rowConnections, true);
+				rowConnection = addPatchConnection(rowConnection, rowConnections);
 				if(rowConnection != null) rowConnections.insert(rowConnection);
 			}
 			PatchPoint windowCenterPoint = window.getCenterPoint();
@@ -2604,7 +2344,7 @@ class TracePoints
 				point = nextPoint;
 				nextPoint = tracePatchPoints[n];
 
-				window = checkCreateWindow(prevPoint, point, nextPoint, nWindows);
+				window = checkCreateWindow(this, prevPoint, point, nextPoint, nWindows);
 				if (window == null) continue;
 				if(nWindows != window.windowIndex)
 					StsException.systemDebug(this, "constructTraceWindows", "Index out of sequence.");
@@ -2623,10 +2363,10 @@ class TracePoints
 		}
 	}
 
-	private CorrelationWindow checkCreateWindow(PatchPoint prevPoint, PatchPoint point, PatchPoint nextPoint, int windowIndex)
+	private CorrelationWindow checkCreateWindow(TracePoints tracePoints, PatchPoint prevPoint, PatchPoint point, PatchPoint nextPoint, int windowIndex)
 	{
 		if(!arePointTypesOK(prevPoint, point, nextPoint)) return null;
-		return new CorrelationWindow(prevPoint, point, nextPoint, windowIndex);
+		return new CorrelationWindow(tracePoints, prevPoint, point, nextPoint, windowIndex);
 	}
 
 	private boolean arePointTypesOK(PatchPoint prevPoint, PatchPoint point, PatchPoint nextPoint)
@@ -2634,22 +2374,19 @@ class TracePoints
 		if(prevPoint != null)
 		{
 			if(nextPoint != null)
-				return StsTraceUtilities.arePointTypesOK(prevPoint.pointType, point.pointType, nextPoint.pointType);
+				return StsTraceUtilities.arePointTypesOK(prevPoint.getPointType(), point.getPointType(), nextPoint.getPointType());
 			else
-				return StsTraceUtilities.arePointTypesAboveOK(prevPoint.pointType, point.pointType);
+				return StsTraceUtilities.arePointTypesAboveOK(prevPoint.getPointType(), point.getPointType());
 		}
-		else // prevPoint == null
-		{
-			if(nextPoint != null)
-				return StsTraceUtilities.arePointTypesBelowOK(point.pointType, nextPoint.pointType);
-			else
-				return false;
-		}
+		else if(nextPoint != null)
+			return StsTraceUtilities.arePointTypesBelowOK(point.getPointType(), nextPoint.getPointType());
+		else
+			return false;
 	}
 
 	private void reinitializeTraceIndices(TracePoints prevRowTrace, TracePoints prevColTrace)
 	{
-		if (this != null) reinitializeTraceIndexing();
+		reinitializeTraceIndexing();
 		if (prevRowTrace != null) prevRowTrace.reinitializeTraceIndexing();
 		if (prevColTrace != null) prevColTrace.reinitializeTraceIndexing();
 	}
@@ -2736,274 +2473,86 @@ class TracePoints
 	*/
 }
 
-class PatchPoint implements Comparable<PatchPoint>, Cloneable
+class PatchPoint implements Comparable<PatchPoint>
 {
-	/** trace this point is on */
-	TracePoints tracePoints;
+	Temp temp;
 	float value;
 	float z = StsParameters.nullValue;
-	byte pointType;
 	StsPatchGrid patchGrid;
-	int slice;
-
-	PatchPoint next, prev;
-
+	/** connections in four cardinal directions */
 	private Connection[] connections;
-
-	/** index of this nextWindow in the trace containing it */
-	int traceIndex;
-	/** correl factor between this nextWindow and next in row. Note that prevRowConnection is from this nextWindow back. */
-	// float rowCorrel;
-	/** correl factor between this nextWindow and next in col.  Note that prevColConnection is from this nextWindow back. */
-	// float colCorrel;
-	/** cloned nextWindow for debugging.  Point this nextWindow was cloned from if cloned. */
-	PatchPoint clonedPoint;
-
-	/** first nextWindow above which has a connected patch */
-//		PatchPoint connectionAbove = null;
-
-	/** first nextWindow below which has a connected patch */
-//		PatchPoint connectionBelow = null;
-
-	PatchPoint()
-	{
-	}
-
-	/** constructor for first and last links in doubly-linked list of PatchPoints */
-	// PatchPoint(int traceIndex) { this.traceIndex = traceIndex; }
-
-	/** constructor for first and last links in doubly-linked ConnectionList */
-	PatchPoint(TracePoints trace, int slice)
-	{
-		this.tracePoints = trace;
-		this.slice = slice;
-		traceIndex = slice;
-	}
 
 	PatchPoint(TracePoints tracePoints, int slice, float z, float value, byte pointType, int traceIndex)
 	{
-		this.tracePoints = tracePoints;
-		this.slice = slice;
+		temp = new Temp(tracePoints.row, tracePoints.col, slice, pointType, traceIndex);
 		this.z = z;
 		this.value = value;
-		this.pointType = pointType;
-		this.traceIndex = traceIndex;
 	}
 
-	PatchPoint(PatchPoint patchPoint, byte pointType, int traceIndex)
+	PatchPoint(TracePoints tracePoints, PatchPoint point, byte pointType, int traceIndex)
 	{
-		tracePoints = patchPoint.tracePoints;
-		slice = patchPoint.slice;
-		z = patchPoint.z;
-		value = patchPoint.value;
-		this.pointType = pointType;
-		this.traceIndex = traceIndex;
+		temp = new Temp(tracePoints.row, tracePoints.col, point.getSlice(), pointType, traceIndex);
+		this.z = point.z;
+		this.value = point.value;
 	}
 
-
-	PatchPoint(TracePoints tracePoints, int slice, int traceIndex)
+	void nullTemps()
 	{
-		this.tracePoints = tracePoints;
-		this.slice = slice;
-		this.traceIndex = traceIndex;
+		temp = null;
+		for(Connection connection : connections)
+			if(connection != null) connection.temp = null;
 	}
 
-	public boolean hasConnection()
+	/** Geometry is a temporary structure used during construction and nulled when the patch is finished */
+	class Temp
 	{
-		return getPrevRowConnection() != null || getPrevColConnection() != null;
-	}
+		/** patch row */
+		int row;
+		/** patch col */
+		int col;
+		/** patch slice */
+		int slice;
+		/** point type (MAX, MIN, etc) */
+		byte pointType;
+		/** index of this nextWindow in the trace containing it */
+		int traceIndex;
 
-	public boolean hasConnection(boolean isRow)
-	{
-		if (isRow)
-			return getPrevRowConnection() != null;
-		else
-			return getPrevColConnection() != null;
-	}
-
-	public boolean hasRowConnection()
-	{
-		return getPrevRowConnection() != null;
-	}
-
-	public boolean hasPrevRowConnection()
-	{
-		return getPrevRowConnection() != null;
-	}
-
-	public boolean hasNextRowConnection()
-	{
-		return getNextRowConnection() != null;
-	}
-
-	public boolean hasColConnection()
-	{
-		return getPrevColConnection() != null;
-	}
-
-	public boolean hasPrevColConnection()
-	{
-		return getPrevColConnection() != null;
-	}
-
-	public boolean hasNextColConnection()
-	{
-		return getNextColConnection() != null;
-	}
-
-	PatchPoint getPrevConnectedColPoint()
-	{
-		if(connections == null || connections[3] == null) return null;
-		return connections[3].prevWindow.getCenterPoint();
-	}
-
-	PatchPoint getPrevConnectedRowPoint()
-	{
-		if(connections == null || connections[2] == null) return null;
-		return connections[2].prevWindow.getCenterPoint();
-	}
-
-	PatchPoint getNextConnectedColPoint()
-	{
-		if(connections == null || connections[1] == null) return null;
-		return connections[1].prevWindow.getCenterPoint();
-	}
-
-	PatchPoint getNextConnectedRowPoint()
-	{
-		if(connections == null || connections[0] == null) return null;
-		return connections[0].prevWindow.getCenterPoint();
+		Temp(int row, int col, int slice, byte pointType, int traceIndex)
+		{
+			this.row = row;
+			this.col = col;
+			this.pointType = pointType;
+			this.slice = slice;
+			this.traceIndex = traceIndex;
+		}
 	}
 
 	public int compareTo(PatchPoint otherPoint)
 	{
-		if (slice > otherPoint.slice) return 1;
-		else if (slice < otherPoint.slice) return -1;
+		if (getSlice() > otherPoint.getSlice()) return 1;
+		else if (getSlice() < otherPoint.getSlice()) return -1;
 		else return 0;
-	}
-
-	public boolean isSameRowCol(PatchPoint point)
-	{
-		if(point != null)
-			return getRow() == point.getRow() && getCol() == point.getCol();
-		StsException.systemError(this, "isSameRowCol", "POINT IS NULL!");
-		return false;
-	}
-
-	protected PatchPoint clone()
-	{
-		try
-		{
-			PatchPoint clonedPoint = (PatchPoint) super.clone();
-			clonedPoint.clonedPoint = this;
-			return clonedPoint;
-		}
-		catch (Exception e)
-		{
-			StsException.systemError(this, "clone");
-			return null;
-		}
-	}
-
-	protected PatchPoint cloneOnGrid(StsPatchGrid patchGrid)
-	{
-		PatchPoint clonedPoint = (PatchPoint) clone();
-		patchGrid.addChangePatchPoint(clonedPoint);
-		return clonedPoint;
-	}
-	/**
-	 * A new point needs to be connected to a grid which already has a point at this location.
-	 * So clone the nextWindow and clear any connection data.  This point will be added to the otherGrid
-	 * defined by the otherPoint or to a new grid if there is no grid associated with the otherPoint.
-	 * @return the cloned nextWindow
-	 */
-	protected PatchPoint cloneAndClear()
-	{
-		try
-		{
-			PatchPoint clonedPoint = clone();
-			clonedPoint.clearConnectionData();
-			return clonedPoint;
-		}
-		catch (Exception e)
-		{
-			StsException.outputWarningException(this, "cloneAndClear", e);
-			return null;
-		}
-	}
-
-	boolean isCloneFromGrid(StsPatchGrid patchGrid)
-	{
-		if(clonedPoint == null) return false;
-		return clonedPoint.patchGrid == patchGrid;
-	}
-
-	public boolean isCloned()
-	{
-		return clonedPoint != null;
-	}
-
-	void clearConnectionData()
-	{
-		deleteConnections();
-		patchGrid = null;
 	}
 
 	void setConnection(Connection connection)
 	{
-		if(connection.isRow)
+		if(connection.isRow())
 			setPrevRowConnection(connection);
 		else
 			setPrevColConnection(connection);
 	}
 
-	void deleteConnection(Connection connection)
-	{
-		if(StsPatchVolume.debug)
-		{
-			PatchPoint point = connection.nextWindow.getCenterPoint();
-			PatchPoint prevPoint = connection.prevWindow.getCenterPoint();
-			if(StsPatchGrid.doDebugPoint(point) || StsPatchGrid.doDebugPoint(prevPoint))
-				StsException.systemDebug(this, "deleteConnection", StsPatchVolume.iterLabel + " DELETE CONNECTION: " +
-						connection.toString());
-		}
-
-		if(getPrevRowConnection() == connection)
-			setPrevRowConnection(null);
-		else if(getPrevColConnection() == connection)
-			setPrevColConnection(null);
-		else
-			StsException.systemError(this, "deleteConnection", "CONNECTION DOESN'T EXIST for point: " + toString() +
-					" CONNECTION: " + connection.toString());
-	}
-
-	Integer hashCode(int nVolumeCols)
-	{
-		return new Integer(getRow() * nVolumeCols + getCol());
-	}
-
-	int getSlice()
-	{
-		return slice;
-	}
-
-	int getID()
-	{
-		if (patchGrid == null) return -1;
-		else return patchGrid.id;
-	}
-
-	int getIndex(int nVolumeCols)
-	{
-		return getCol() + getRow() * nVolumeCols;
-	}
-
 	public String toString()
 	{
-		if (clonedPoint != null)
-			return pointToString() + " cloned from " + clonedPoint.patchToString();
+		String connectString = (getPrevRowConnection() != null ? " RC" : "") + (getPrevColConnection() != null ? " CC" : "") + " ";
+		if(temp != null)
+		{
+			String tempString = "r " + getRow() + " c " + getCol() + " s " + getSlice() + " v " + value +
+						" z " + z + " t " + connectString + StsTraceUtilities.typeStrings[getPointType()];
+			return patchToString() + tempString;
+		}
 		else
-			return pointToString();
+			return patchToString();
 	}
 
 	private String patchToString()
@@ -3013,23 +2562,10 @@ class PatchPoint implements Comparable<PatchPoint>, Cloneable
 		return "id " + id + " ";
 	}
 
-	private String pointToString()
-	{
-		String connectString = (getPrevRowConnection() != null ? " RC" : "") + (getPrevColConnection() != null ? " CC" : "") + " ";
-		return patchToString() + "r " + getRow() + " c " + getCol() + " s " + slice + " v " + value +
-				" i " + traceIndex + " z " + z + " t " + connectString + StsTraceUtilities.typeStrings[pointType];
-	}
-
 	static public String staticToString(PatchPoint point)
 	{
 		if(point == null) return "NULL";
 		else return point.toString();
-	}
-
-	String nullOrToString(String string, PatchPoint patchPoint)
-	{
-		if (patchPoint == null) return " " + string + " null";
-		else return " " + string + " " + patchPoint.toString();
 	}
 
 	StsPatchGrid getPatchGrid()
@@ -3042,22 +2578,15 @@ class PatchPoint implements Comparable<PatchPoint>, Cloneable
 		this.patchGrid = patchGrid;
 	}
 
-	public byte getPointType(boolean useFalseTypes)
-	{
-		if (!useFalseTypes) return pointType;
-		return StsTraceUtilities.coercedPointTypes[pointType];
-	}
-
 	public PatchPoint resetIndex(int index)
 	{
-		traceIndex = index;
+		if(temp == null)
+		{
+			StsException.systemError(this, "resetIndex", "patchPoint.temp is null.");
+			return null;
+		}
+		temp.traceIndex = index;
 		return this;
-	}
-
-	final protected int getRow() { return tracePoints.row; }
-	final protected int getCol()
-	{
-		return tracePoints.col;
 	}
 
 	/** connection from this tracePoint to the tracePoint on the adjacent trace at this row, col+1 (same row) */
@@ -3072,24 +2601,15 @@ class PatchPoint implements Comparable<PatchPoint>, Cloneable
 	/** connection from this tracePoint to the tracePoint on the adjacent trace at this row-1, col (same col) */
 	public Connection getPrevColConnection() { return getConnection(3); }
 
+	protected Connection[] getConnections()
+	{
+		return connections;
+	}
+
 	protected Connection getConnection(int i)
 	{
 		if(connections == null) return null;
 		return connections[i];
-	}
-
-	public StsGridLink[] createGridLinks()
-	{
-		StsGridLink[] gridLinks = new StsGridLink[4];
-		for(int i = 0; i < 4; i++)
-		{
-			Connection connection = connections[i];
-			if(connection == null) continue;
-			if(gridLinks == null)
-				gridLinks = new StsGridLink[4];
-			gridLinks[i] = connection.createGridLink(i);
-		}
-		return gridLinks;
 	}
 
 	public void setNextRowConnection(Connection rowConnection)
@@ -3142,9 +2662,66 @@ class PatchPoint implements Comparable<PatchPoint>, Cloneable
 		connections[i] = connection;
 	}
 
-	public void deleteConnections()
+	final protected int getRow()
 	{
-		connections = null;
+		if (temp == null)
+		{
+			StsException.systemError(this, "getRow", "patchPoint.temp is null.");
+			return -1;
+		}
+		return temp.row;
+	}
+
+	final protected int getCol()
+	{
+		if (temp == null)
+		{
+			StsException.systemError(this, "getCol", "patchPoint.temp is null.");
+			return -1;
+		}
+		return temp.col;
+	}
+
+	int getSlice()
+	{
+		if (temp == null)
+		{
+			StsException.systemError(this, "getSlice", "patchPoint.temp is null.");
+			return -1;
+		}
+		return temp.slice;
+	}
+
+	void adjustSlice(int adjust)
+	{
+		if (temp == null)
+		{
+			StsException.systemError(this, "getSlice", "patchPoint.temp is null.");
+			return;
+		}
+		temp.slice += adjust;
+	}
+
+	int getID()
+	{
+		if (patchGrid == null) return -1;
+		else return patchGrid.id;
+	}
+
+	byte getPointType()
+	{
+		if (temp == null)
+		{
+			StsException.systemError(this, "getPointType", "patchPoint.temp is null.");
+			return -1;
+		}
+		return temp.pointType;
+	}
+
+	public byte getPointType(boolean useFalseTypes)
+	{
+		if (!useFalseTypes) return getPointType();
+		return StsTraceUtilities.coercedPointTypes[getPointType()];
 	}
 }
 
@@ -3176,22 +2753,25 @@ class CorrelationWindow implements Cloneable
 	/** instantaneous amplitude for this nextWindow; average of min and max values of nextWindow (1 or 2 points) */
 	float amplitude;
 
+	TracePoints tracePoints;
+
 	public static final byte CENTER = 0;
 	public static final byte ABOVE = -1;
 	public static final byte BELOW = 1;
 
-	CorrelationWindow(PatchPoint prevPoint, PatchPoint centerPoint, PatchPoint nextPoint, int windowIndex)
+	CorrelationWindow(TracePoints tracePoints, PatchPoint prevPoint, PatchPoint centerPoint, PatchPoint nextPoint, int windowIndex)
 	{
+		this.tracePoints = tracePoints;
 		this.setCenterPoint(centerPoint);
 		this.windowIndex = windowIndex;
 		float dValueMinus = 0.0f, dValuePlus = 0.0f;
 		if(prevPoint != null)
 		{
-			dSliceMinus = centerPoint.slice - prevPoint.slice;
+			dSliceMinus = centerPoint.getSlice() - prevPoint.getSlice();
 			dValueMinus = Math.abs(centerPoint.value - prevPoint.value);
 			if (nextPoint != null)
 			{
-				dSlicePlus = nextPoint.slice - centerPoint.slice;
+				dSlicePlus = nextPoint.getSlice() - centerPoint.getSlice();
 				dValuePlus = Math.abs(centerPoint.value - nextPoint.value);
 				windowType = CENTER;
 			}
@@ -3204,7 +2784,7 @@ class CorrelationWindow implements Cloneable
 		}
 		else if(nextPoint != null)
 		{
-			dSlicePlus = nextPoint.slice - centerPoint.slice;
+			dSlicePlus = nextPoint.getSlice() - centerPoint.getSlice();
 			dValuePlus = Math.abs(centerPoint.value - nextPoint.value);
 			dSliceMinus = dSlicePlus;
 			dValueMinus = dValuePlus;
@@ -3240,12 +2820,12 @@ class CorrelationWindow implements Cloneable
 
 	boolean isAboveOrEqual(CorrelationWindow prevWindow)
 	{
-		return getCenterPoint().slice <= prevWindow.getCenterPoint().slice;
+		return getCenterPoint().getSlice() <= prevWindow.getCenterPoint().getSlice();
 	}
 
 	boolean isBelowOrEqual(CorrelationWindow prevWindow)
 	{
-		return getCenterPoint().slice >= prevWindow.getCenterPoint().slice;
+		return getCenterPoint().getSlice() >= prevWindow.getCenterPoint().getSlice();
 	}
 
 	/** check for closest of two windows where one must be above or equal to and the other must be below or equal to this nextWindow.
@@ -3253,7 +2833,7 @@ class CorrelationWindow implements Cloneable
 	 *
 	 * @param windowAbove nextWindow above or equal in slice value to this nextWindow
 	 * @param windowBelow nextWindow below or equal in slice value to this nextWindow
-	 * @return
+	 * @return closest of windows above and below to this window
 	 */
 	CorrelationWindow getClosestWindow(CorrelationWindow windowAbove, CorrelationWindow windowBelow)
 	{
@@ -3261,8 +2841,8 @@ class CorrelationWindow implements Cloneable
 			return windowBelow;
 		else if(windowBelow == null)
 			return windowAbove;
-		int difAbove = getCenterPoint().slice - windowAbove.getCenterPoint().slice;
-		int difBelow = windowBelow.getCenterPoint().slice - getCenterPoint().slice;
+		int difAbove = getCenterPoint().getSlice() - windowAbove.getCenterPoint().getSlice();
+		int difBelow = windowBelow.getCenterPoint().getSlice() - getCenterPoint().getSlice();
 		if(StsPatchVolume.debug && (difAbove < 0 || difBelow < 0))
 		{
 			StsException.systemDebug(this, "getClosestWindow", "nextWindow not between windows above and below");
@@ -3277,7 +2857,7 @@ class CorrelationWindow implements Cloneable
 		else					 return windowBelow;
 	}
 
-	void computeCorrelation(CorrelationWindow prevWindow, float correlPenalty)
+	void computeCorrelation(CorrelationWindow prevWindow)
 	{
 		amplitudeRatio = amplitude/prevWindow.amplitude;
 		if(amplitudeRatio > 1.0f) amplitudeRatio = 1.0f/amplitudeRatio;
@@ -3308,7 +2888,7 @@ class CorrelationWindow implements Cloneable
 		if(correlPenalty > 0.0f)
 		{
 			if(windowType != CENTER) totalPenalty = correlPenalty;
-			if(StsTraceUtilities.isPointTypeFalse(getCenterPoint().pointType) || StsTraceUtilities.isPointTypeFalse(this.getCenterPoint().pointType))
+			if(StsTraceUtilities.isPointTypeFalse(getCenterPoint().getPointType()) || StsTraceUtilities.isPointTypeFalse(this.getCenterPoint().getPointType()))
 				totalPenalty += correlPenalty;
 		}
 		stretchCorrelation -= totalPenalty;
@@ -3462,149 +3042,162 @@ class CorrelationWindow implements Cloneable
  */
 class Connection implements Cloneable
 {
-	Connection next, prev;
-	/** connected window on this trace */
-	CorrelationWindow nextWindow;
-	/** connected window on other (prev) trace */
-	CorrelationWindow prevWindow;
-	/** connection is in same row */
-	boolean isRow;
-	/** average of slice values for two connected points; since connections can't cross or be identical, it will provide correct order */
-	float sliceAvg;
-	/** stretch correlation between these two points */
-	//float stretchCorrelation;
-	/** amplitude ratio between these two Points  */
-	//float amplitudeRatio;
-	/** isMoved indicates this connection exists but has been moved to other patchGrid; a clone is left here indicating that
-	 *  the connection exists and doesn't need to be regenerated on a subsequent iteration; because it isMoved, however, an
-	 *  actual connection doesn't exist; the correlation between the two connected points is zero. */
-	boolean isMoved = false;
-  	/** construct connection from nextWindow to prevWindow. Clone the nextWindow since it may be shared by two connections
+	PatchPoint prevPoint, nextPoint;
+	public byte linkType = LINK_NONE;
+	public float correlation;
+
+	Temp temp;
+
+	static final public byte LINK_NONE = -1;
+	static final public byte LINK_RIGHT = 0;
+	static final public byte LINK_UP = 1;
+	static final public byte LINK_LEFT = 2;
+	static final public byte LINK_DOWN = 3;
+
+	static float nullValue = StsParameters.nullValue;
+
+	Connection() {}
+
+	/** construct connection from nextWindow to prevWindow. Clone the nextWindow since it may be shared by two connections
 	 *  and one may affect the other. The nextWindow and cloned nextWindow share the same centerPoint which has the row and col connections.
 	 * @param prevWindow
 	 * @param nextWindow
 	 */
 	Connection(CorrelationWindow prevWindow, CorrelationWindow nextWindow)
 	{
-		this.nextWindow = nextWindow.clone();
-		this.prevWindow = prevWindow;
-		sliceAvg = (this.nextWindow.getCenterPoint().slice + prevWindow.getCenterPoint().slice)/2.0f;
-		//this.stretchCorrelation = nextWindow.stretchCorrelation;
-		//this.amplitudeRatio = nextWindow.amplitudeRatio;
-		isRow = prevWindow.getCenterPoint().getRow() == this.nextWindow.getCenterPoint().getRow();
+		temp = new Temp(prevWindow, nextWindow);
+		prevPoint = prevWindow.getCenterPoint();
+		nextPoint = nextWindow.getCenterPoint();
 	}
 
-	PatchPoint getWindowCenterPoint(TracePoints tracePoints)
+	CorrelationWindow getPrevWindow()
 	{
-		if(nextWindow.getCenterPoint().tracePoints == tracePoints) return nextWindow.getCenterPoint();
-		else if(prevWindow.getCenterPoint().tracePoints == tracePoints) return prevWindow.getCenterPoint();
-		StsException.systemDebug(this, "getWindowCenterPoint.  tracePoints ", tracePoints.toString() + " not found in " + toString());
-		return null;
-	}
-
-	public PatchPoint getNextPoint()
-	{
-		return nextWindow.getCenterPoint();
-	}
-
-	public PatchPoint getPrevPoint()
-	{
-		return prevWindow.getCenterPoint();
-	}
-
-	public void setNextPoint(PatchPoint patchPoint)
-	{
-		nextWindow.setCenterPoint(patchPoint);
-	}
-
-	public void setPrevPoint(PatchPoint patchPoint)
-	{
-		prevWindow.setCenterPoint(patchPoint);
-	}
-
-	StsPatchGrid getPatchGrid()
-	{
-		return nextWindow.getCenterPoint().patchGrid;
-	}
-
-	StsPatchGrid getPrevPatchGrid()
-	{
-		return prevWindow.getCenterPoint().patchGrid;
-	}
-
-	StsPatchGrid getNextPatchGrid()
-	{
-		return nextWindow.getCenterPoint().patchGrid;
-	}
-
-	public void movePoint(PatchPoint newPatchPoint)
-	{
-		PatchPoint oldPoint = nextWindow.getCenterPoint();
-		oldPoint.deleteConnection(this);
-		newPatchPoint.setConnection(this);
-	}
-/*
-	public final void addConnectionToPoint()
-	{
-		PatchPoint patchPoint = nextWindow.getCenterPoint();
-		if (isRow)
+		if(temp == null)
 		{
-			patchPoint.setPrevRowConnection(this);
-			// otherPatchPoint.rowCorrel = connection.stretchCorrelation;
+			StsException.systemError(this, "getPrevWindow", "Connection.temp is null.");
+			return null;
 		}
+		return temp.prevWindow;
+	}
+
+	CorrelationWindow getNextWindow()
+	{
+		if(temp == null)
+		{
+			StsException.systemError(this, "getNextWindow", "Connection.temp is null.");
+			return null;
+		}
+		return temp.nextWindow;
+	}
+
+	PatchPoint getPrevPoint() { return prevPoint; }
+	PatchPoint getNextPoint() { return nextPoint; }
+
+	StsPatchGrid getPrevPatchGrid() { return prevPoint.patchGrid; }
+	StsPatchGrid getNextPatchGrid() { return nextPoint.patchGrid; }
+
+	StsPatchGrid getNextPatchGrid(int pointCcwIndex )
+	{
+		if(StsPatchGrid.isForwardDir[pointCcwIndex])
+			return nextPoint.patchGrid;
 		else
-		{
-			patchPoint.setPrevColConnection(this);
-			// otherPatchPoint.colCorrel = connection.stretchCorrelation;
-		}
+			return prevPoint.patchGrid;
 	}
-*/
+
+	Connection getNextConnection()
+	{
+		return temp.next;
+	}
+
+	void setPrevConnection(Connection prev)
+	{
+		temp.prev = prev;
+	}
+
+	void setNextConnection(Connection next)
+	{
+		temp.next = next;
+	}
+
+	boolean isRow() { return linkType== LINK_LEFT || linkType == LINK_RIGHT; }
+
 	public final void addConnectionToPoints()
 	{
-		PatchPoint patchPoint = nextWindow.getCenterPoint();
-		PatchPoint prevPatchPoint = this.prevWindow.getCenterPoint();
-		if (isRow)
+		temp.addConnectionToPoints();
+	}
+
+	static public float staticGetPrevZ(Connection link)
+	{
+		if(link == null) return nullValue;
+		return link.prevPoint.z;
+	}
+
+	static public float staticGetNextZ(Connection connection)
+	{
+		if(connection == null) return nullValue;
+		return connection.getNextZ();
+	}
+
+	public float getPrevZ()
+	{
+		return prevPoint.z;
+	}
+
+	public float getNextZ()
+	{
+		return nextPoint.z;
+	}
+
+	class Temp
+	{
+		Connection next;
+		Connection prev;
+		/** connected window on this trace */
+		CorrelationWindow nextWindow;
+		/** connected window on other (prev) trace */
+		CorrelationWindow prevWindow;
+		/** connection is in same row */
+		boolean isRow;
+		/** average of slice values for two connected points; since connections can't cross or be identical, it will provide correct order */
+		float sliceAvg;
+
+		Temp(CorrelationWindow prevWindow, CorrelationWindow nextWindow)
 		{
-			patchPoint.setPrevRowConnection(this);
-			prevPatchPoint.setNextRowConnection(this);
-			// otherPatchPoint.rowCorrel = connection.stretchCorrelation;
+			this.nextWindow = nextWindow.clone();
+			this.prevWindow = prevWindow;
+			sliceAvg = (this.nextWindow.getCenterPoint().getSlice() + prevWindow.getCenterPoint().getSlice())/2.0f;
+			//this.stretchCorrelation = nextWindow.stretchCorrelation;
+			//this.amplitudeRatio = nextWindow.amplitudeRatio;
+			isRow = prevWindow.getCenterPoint().getRow() == this.nextWindow.getCenterPoint().getRow();
 		}
-		else
+
+		public final void addConnectionToPoints()
 		{
-			patchPoint.setPrevColConnection(this);
-			prevPatchPoint.setNextColConnection(this);
-			// otherPatchPoint.colCorrel = connection.stretchCorrelation;
+			PatchPoint patchPoint = nextWindow.getCenterPoint();
+			PatchPoint prevPatchPoint = this.prevWindow.getCenterPoint();
+			if (isRow)
+			{
+				patchPoint.setPrevRowConnection(Connection.this);
+				prevPatchPoint.setNextRowConnection(Connection.this);
+				// otherPatchPoint.rowCorrel = connection.stretchCorrelation;
+			}
+			else
+			{
+				patchPoint.setPrevColConnection(Connection.this);
+				prevPatchPoint.setNextColConnection(Connection.this);
+				// otherPatchPoint.colCorrel = connection.stretchCorrelation;
+			}
 		}
-	}
 
-	/** Create a gridLink in this direction (0:RIGHT, 1:UP, 2:LEFT, 3:DOWN) from this Connection.
-	 *  Because connections are always from a point to the previous row or col point (dir 2 to prev col in row, dir 3 to prev row in col)
-	 *  and are the same in the opposite direction, reverse the connection in making the gridLink in these cases.
-	 * @param dir
-	 * @return
-	 */
-	public final StsGridLink createGridLink(int dir)
-	{
-		if (dir == 0 || dir == 1)
-			return new StsGridLink(dir, getPrevPoint().z, getNextPoint().z, getPrevPatchGrid(), getNextPatchGrid(), nextWindow.stretchCorrelation);
-		else
-			return new StsGridLink(dir, getNextPoint().z, getPrevPoint().z, getNextPatchGrid(), getPrevPatchGrid(), nextWindow.stretchCorrelation);
-	}
-
-	public String toString()
-	{
-		String rowColString = (isRow) ? "ROW" : "COL";
-		return rowColString + " CONNECTION nextWindow: " + nextWindow.toString() + "     TO prevWindow: " + prevWindow.toString() +
-				" sliceAvg: " + sliceAvg; //  + " correl: " + stretchCorrelation + " amplitudeRatio: " + amplitudeRatio;
-	}
-
-	static public String staticToString(Connection connection)
-	{
-		if(connection == null)
-			return "CONNECTION IS NULL";
-		return connection.toString();
+		public String toString()
+		{
+			String rowColString = (isRow) ? "ROW" : "COL";
+			return rowColString + " CONNECTION nextWindow: " + nextWindow.toString() + "     TO prevWindow: " + prevWindow.toString() +
+					" sliceAvg: " + sliceAvg; //  + " correl: " + stretchCorrelation + " amplitudeRatio: " + amplitudeRatio;
+		}
 	}
 }
+
 /**
  * doubly linked list of Connection[s].  There are two lists for each trace: rowConnections to the prev col on same row,
  * and colConnections to the prev row on the same col.  Connections in the list are in order, and must not cross or be identical.
@@ -3633,54 +3226,43 @@ class ConnectionList
 
 		CorrelationWindow firstWindow = trace.windows[0].clone();
 		firstWindow.windowIndex -= 1;
-		firstWindow.getCenterPoint().slice -= 1;
+		firstWindow.getCenterPoint().adjustSlice(-1);
 
 		CorrelationWindow lastWindow = trace.windows[trace.nWindows-1].clone();
 		lastWindow.windowIndex = trace.nWindows;
-		lastWindow.getCenterPoint().slice += 1;
+		lastWindow.getCenterPoint().adjustSlice(1);
 
 		CorrelationWindow firstPrevWindow = prevTrace.windows[0].clone();
 		firstPrevWindow.windowIndex = -1;
-		firstPrevWindow.getCenterPoint().slice -= 1;
+		firstPrevWindow.getCenterPoint().getSlice();
 
 		CorrelationWindow lastPrevWindow = prevTrace.windows[prevTrace.nWindows-1].clone();
 		lastPrevWindow.windowIndex = prevTrace.nWindows;
-		lastPrevWindow.getCenterPoint().slice += 1;
+		lastPrevWindow.getCenterPoint().adjustSlice(1);
 
 		first = new Connection(firstPrevWindow, firstWindow);
 		last = new Connection(lastPrevWindow, lastWindow);
-		first.next = last;
-		last.prev = first;
+		first.temp.next = last;
+		last.temp.prev = first;
 		// currentConnection = first;
 		connectionAbove = first;
 		connectionBelow = last;
-		connectionAbove.next = last;
-		connectionBelow.prev = first;
+		connectionAbove.setNextConnection(last);
+		connectionBelow.setPrevConnection(first);
 	}
 
 	void reinitializeTraceIndexing()
 	{
 		connectionAbove = first;
-		connectionBelow = first.next;
-		// currentConnection = first;
-	}
-
-	int getOtherPointIndexAbove()
-	{
-		return connectionAbove.prevWindow.windowIndex;
-	}
-
-	int getOtherPointIndexBelow()
-	{
-		return connectionBelow.prevWindow.windowIndex;
+		connectionBelow = first.getNextConnection();
 	}
 
 	/** we have moved down to a new existing correlated patchPoint; set the interval to the one between this patchPoint and the nextWindow below */
 	void movePatchInterval(Connection connectionAbove)
 	{
 		this.connectionAbove = connectionAbove;
-		if(connectionAbove.next != null)
-			connectionBelow = connectionAbove.next;
+		if(connectionAbove.getNextConnection() != null)
+			connectionBelow = connectionAbove.getNextConnection();
 	}
 
 	/**
@@ -3696,13 +3278,10 @@ class ConnectionList
 			StsException.systemDebug(this, "insert", " connection " + connection.toString() + " same as " + connectionAbove.toString() + " or " + connectionBelow.toString());
 			return;
 		}
-		connectionAbove.next = connection;
-		connection.prev = connectionAbove;
-		connection.next = connectionBelow;
-		connectionBelow.prev = connection;
-
-		// connectionAbove = connection;
-		// connectionBelow = connection.next;
+		connectionAbove.setNextConnection(connection);
+		connection.setPrevConnection(connectionAbove);
+		connection.setNextConnection(connectionBelow);
+		connectionBelow.setPrevConnection(connection);
 	}
 
 	boolean connectionsCross(Connection connection)
@@ -3710,7 +3289,7 @@ class ConnectionList
 		if (!connectionsCross(connection, connectionAbove) && !connectionsCross(connection, connectionBelow))
 			return false;
 
-		if(StsPatchVolume.debug && StsPatchGrid.debugPoint && (StsPatchGrid.doDebugPoint(connection.nextWindow.getCenterPoint()) || StsPatchGrid.doDebugPoint(connection.prevWindow.getCenterPoint())))
+		if(StsPatchVolume.debug && StsPatchGrid.debugPoint && (StsPatchGrid.doDebugPoint(connection.nextPoint) || StsPatchGrid.doDebugPoint(connection.prevPoint)))
 			StsException.systemDebug(this, "connectionCrosses", StsPatchVolume.iterLabel + connection.toString());
 
 		return true;
@@ -3718,7 +3297,7 @@ class ConnectionList
 
 	boolean connectionsCross(Connection c1, Connection c2)
 	{
-		int crosses = StsMath.signProduct(c1.nextWindow.getCenterPoint().slice - c2.nextWindow.getCenterPoint().slice, c1.nextWindow.getCenterPoint().slice - c2.nextWindow.getCenterPoint().slice);
+		int crosses = StsMath.signProduct(c1.nextPoint.getSlice() - c2.getNextPoint().getSlice(), c1.getNextPoint().getSlice() - c2.getNextPoint().getSlice());
 		return crosses < 0;
 	}
 }

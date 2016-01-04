@@ -1885,12 +1885,12 @@ public class StsEdgeLoop
     /*
         private StsEdgeLoopRadialGridLink getNextLink(StsEdgeLoopRadialGridLink link, int rowOrCol)
         {
-            StsEdgeLoopRadialGridLink[] gridLinks = link.getPointLinks();
-            if(gridLinks == null) return null;
-            int nPointLinks = gridLinks.length;
+            StsEdgeLoopRadialGridLink[] gridConnections = link.getPointLinks();
+            if(gridConnections == null) return null;
+            int nPointLinks = gridConnections.length;
             for(int n = 0; n < nPointLinks; n++)
             {
-                StsEdgeLoopRadialGridLink nextLink = gridLinks[n];
+                StsEdgeLoopRadialGridLink nextLink = gridConnections[n];
                 if(nextLink == null) continue;
                 StsGridRowCol gridRowCol = nextLink.getPoint().getGridRowCol();
                 if(gridRowCol.isRowOrCol(rowOrCol)) return nextLink;

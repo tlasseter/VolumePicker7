@@ -1234,7 +1234,7 @@ public class StsEdgeLoopRadialLinkGrid
                     this.rowCol = rowCol;
 
                     if(rowOrCol == ROW)
-                        firstLink = gridLinks[rowCol-rowMin];
+                        firstLink = gridConnections[rowCol-rowMin];
                     else
                         firstLink = colLinks[rowCol-colMin];
 
