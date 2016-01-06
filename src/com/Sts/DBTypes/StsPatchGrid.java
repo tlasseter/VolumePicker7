@@ -2076,7 +2076,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					cornerPoint = cornerLinkPoints[i];
 					if (cornerPoint == null) continue;
 					if(cornerPoint.nextLinkPoint == null)
-						cornerPoint = null;
+						cornerLinkPoints[i] = null;
 					else
 						isOk = true;
 				}
@@ -2109,8 +2109,8 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				LinkTriangle nextLinkTriangle = linkTriangles[0];
 				for (int n = 0; n < nTriangles; n++)
 				{
-					LinkTriangle linkTriangle = nextLinkTriangle;
-					nextLinkTriangle = linkTriangles[(n+1)%nTriangles];
+					LinkTriangle linkTriangle = linkTriangles[n];
+					nextLinkTriangle = getNextTriangle(linkTriangles, nTriangles, n);
 					if(linkTriangle == null || nextLinkTriangle == null) continue;
 					linkTriangle.checkSetTriangleIsConnected(nextLinkTriangle);
 					// linkTriangle.setPointNormals();
@@ -2159,6 +2159,24 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				return true;
 			}
 
+			/** given a sequence of triangles ccw from side 0 (which may not adjoin),
+			 *  return the next adjoining triangle by comparing side numbers which equal the index of the first point.
+			 * @param linkTriangles triangle array
+			 * @param nTriangles length of triangle array
+			 * @param n index of current triangle
+			 * @return next triangle if adjoining or null if none adjoining
+			 */
+			LinkTriangle getNextTriangle(LinkTriangle[] linkTriangles, int nTriangles, int n)
+			{
+				LinkTriangle triangle = linkTriangles[n];
+				int sideIndex = triangle.point.pointCcwIndex;
+				LinkTriangle nextTriangle = linkTriangles[(n+1)%nTriangles];
+				int nextSideIndex = nextTriangle.point.pointCcwIndex;
+				if(nextSideIndex == (sideIndex+1)%4)
+					return nextTriangle;
+				else
+					return null;
+			}
 			/** Given a set of connected triangles, iterate through the sequence of points from the point just before
 			 *  the first triangle to the point after the last triangle.  Terminate this iteration if and when the
 			 *  first point in the sequence is encountered. This sequence of points is used to define the values of
@@ -2495,6 +2513,16 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				{
 					nextTriangleConnected = nextPoint.equals(nextTriangle.point);
 				}
+				private boolean drawTriangleSingles(GL gl, boolean isDrawing)
+				{
+					// then draw the complete triangle.
+					gl.glBegin(GL.GL_TRIANGLES);
+					drawCenterPoint(gl);
+					point.drawPointAndNormal(gl);
+					nextPoint.drawPointAndNormal(gl);
+					gl.glEnd();
+					return false;
+				}
 
 				private boolean drawTriangle(GL gl, boolean isDrawing)
 				{
@@ -2504,16 +2532,14 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 						// If we drew the previous triangle and it wasn't split from this one, just drawn the next point and normal
 						// If aren't currently drawing (no previous triangle or it was split from this one at common corner),
 						// then draw the complete triangle.
-						if (isDrawing)
-							point.drawNextPointAndNormal(gl);
-						else
+						if (!isDrawing)
 						{
 							gl.glBegin(GL.GL_TRIANGLE_FAN);
 							drawCenterPoint(gl);
 							point.drawPointAndNormal(gl);
-							nextPoint.drawPointAndNormal(gl);
 							isDrawing = true;
 						}
+						nextPoint.drawPointAndNormal(gl);
 						// if isDrawing and the first point is split  (doesn't share common point with previous side),
 						// then terminate drawing
 						if(isDrawing && !nextTriangleConnected)
@@ -2557,9 +2583,9 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 							StsException.systemDebug(this, "drawCenterPoint", "z is null");
 							return;
 						}
-						gl.glNormal3fv(centerNormal, 0);
-						gl.glVertex3f(centerX, centerY, centerZ);
 					}
+					gl.glNormal3fv(centerNormal, 0);
+					gl.glVertex3f(centerX, centerY, centerZ);
 				}
 			}
 		}
