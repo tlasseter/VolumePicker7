@@ -2513,22 +2513,12 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				{
 					nextTriangleConnected = nextPoint.equals(nextTriangle.point);
 				}
-				private boolean drawTriangleSingles(GL gl, boolean isDrawing)
-				{
-					// then draw the complete triangle.
-					gl.glBegin(GL.GL_TRIANGLES);
-					drawCenterPoint(gl);
-					point.drawPointAndNormal(gl);
-					nextPoint.drawPointAndNormal(gl);
-					gl.glEnd();
-					return false;
-				}
 
 				private boolean drawTriangle(GL gl, boolean isDrawing)
 				{
 					if(!isLine)
 					{
-						// Cell is drawn with possibly connected triangles using a fan draw
+						// Cell is drawn with possibly connected triangles using a triangle fan draw
 						// If we drew the previous triangle and it wasn't split from this one, just drawn the next point and normal
 						// If aren't currently drawing (no previous triangle or it was split from this one at common corner),
 						// then draw the complete triangle.
