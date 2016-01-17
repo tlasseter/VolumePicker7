@@ -119,11 +119,11 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 	transient int nParentGrids;
 	transient StsPoint currentCursorPoint;
 	transient StsPatchGrid cursorPointPatch;
-	transient private StsPatchGrid[] selectedPatchGrids;
-
+	transient private StsPatchGrid[] drawPatchGrids;
+	transient private PatchGridGroup[] patchGridGroups;
+	transient boolean displayingChildPatches = true;
 	transient float[] histogramValues;
 	transient int nHistogramValues = 10000;
-
 	static protected StsObjectPanel objectPanel = null;
 
 	public static final byte PICK_MAX = 0;
@@ -298,6 +298,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 				{
 					rowPrevTracePoints = tracePoints;
 					tracePoints = rowTracesPoints[col];
+					if(tracePoints == null) continue;
 					if(row == 0)
 						colPrevTracePoints = null;
 					else
@@ -346,7 +347,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		for (int col = 0, volCol = croppedColMin; volCol <= croppedColMax; col++, volCol++)
 		{
 			// StsException.systemDebug(this, "constructPatchVolume", "col loop, col: " + col);
-			rowFloatBuffer.position(volCol * croppedBoundingBox.nSlices + croppedBoundingBox.sliceMin);
+			rowFloatBuffer.position(volCol * seismicVolume.nSlices + croppedBoundingBox.sliceMin);
 			rowFloatBuffer.get(traceValues);
 
 			TracePoints tracePoints = null;
@@ -519,7 +520,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 
 	public void initialize()
 	{
-		clearSelectedPatches();
+//		clearSelectedPatches();
 	}
 
 	public void initializeColorscale()
@@ -644,7 +645,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 			else if (grid.isChild()) nChildren++;
 			else nNew++;
 		}
-		StsException.systemDebug(this, "finish", "grid groups: " + nParents + " child grids: " + nChildren + " unattached grids: " + nNew);
+		StsException.systemDebug(this, "finish", "parent grids: " + nParents + " child grids: " + nChildren + " unattached grids: " + nNew);
 
 		int num = getPatchVolumeClass().getSize();
 		String newname = seismicName + ".patchVolume" + (num + 1);
@@ -883,8 +884,8 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 
 	private StsPatchGrid[] getRunCurvaturePatches(boolean runAllPatches)
 	{
-		if (runAllPatches || this.selectedPatchGrids == null) return rowSortedPatchGrids;
-		else return selectedPatchGrids;
+		if (runAllPatches || this.drawPatchGrids == null) return rowSortedPatchGrids;
+		else return drawPatchGrids;
 	}
 
 	private ArrayList<TracePoints> getOtherTraces(TracePoints newTrace, TracePoints prevColTrace, TracePoints[] prevRowTraces)
@@ -1128,7 +1129,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 	public void display(StsGLPanel glPanel)
 	{
 		boolean debugDisplay = debug && StsPatchGrid.debugPatchGrid && StsPatchGrid.debugPatchDraw;
-		boolean display = getDisplaySurfs() && selectedPatchGrids != null;
+		boolean display = getDisplaySurfs();
 		if (!display && !debugDisplay) return;
 
 		GL gl = glPanel.getGL();
@@ -1136,23 +1137,26 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		boolean displayCurvature = getPatchVolumeClass().getDisplayCurvature();
 
 		initializePatchDraw(gl);
-		boolean displayChildPatches = getPatchVolumeClass().getDisplayChildPatches();
 
+		boolean displayChildPatches = getPatchVolumeClass().getDisplayChildPatches();
+		/*
+		if(displayChildPatches != displayingChildPatches)
+		{
+			displayingChildPatches = displayChildPatches;
+			rebuildDrawPatches();
+		}
+        */
 		if(debugDisplay)
 		{
-			StsPatchGrid patchGrid = getRowSortedPatchGrd(StsPatchGrid.debugPatchID);
+			StsPatchGrid patchGrid = getRowSortedPatchGrid(StsPatchGrid.debugPatchID);
 			if(patchGrid == null) return;
-			patchGrid.drawPatchGrid(gl, displayChildPatches, displayCurvature, colorscale);
+			patchGrid.draw(gl, displayCurvature, colorscale);
 			return;
 		}
 
-		for (StsPatchGrid patchGrid : selectedPatchGrids)
-		{
-			if(patchGrid.parentGrid != null && displayChildPatches)
-				patchGrid.parentGrid.drawPatchGrid(gl, displayChildPatches, displayCurvature, colorscale);
-			else
-				patchGrid.drawPatchGrid(gl, displayChildPatches, displayCurvature, colorscale);
-		}
+		for(PatchGridGroup gridGroup : patchGridGroups)
+			gridGroup.drawGrids(gl, displayChildPatches, displayCurvature, colorscale);
+
 		if (getDisplayVoxels())
 		{
 			displayVoxels(glPanel);
@@ -1464,6 +1468,142 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		colorscale.setRange(dataMin, dataMax);
 	}
 
+	class PatchGridGroup
+	{
+		StsPatchGrid selectedGrid;
+		ArrayList<StsPatchGrid> groupGrids;
+
+		PatchGridGroup(StsPatchGrid selectedGrid)
+		{
+			this.selectedGrid = selectedGrid;
+			groupGrids = getGroupGrids(selectedGrid);
+		}
+
+		public void drawGrids(GL gl, boolean displayChildPatches, boolean displayCurvature, StsColorscale colorscale)
+		{
+			if(!displayChildPatches)
+				selectedGrid.draw(gl, displayCurvature, colorscale);
+			else
+			{
+				for (StsPatchGrid grid : groupGrids)
+					grid.draw(gl, displayCurvature, colorscale);
+			}
+		}
+
+		/** For this selected grid: 1) add to a new group of grids, 2) hierarchically add it's connected grids as long as they meet the group criteria.
+		 *
+		 * @param selectedGrid  the grid selected which will be first in the group
+		 * @return  the group of grids including the selected grid and all qualified connecting grids
+		 */
+		ArrayList<StsPatchGrid> getGroupGrids(StsPatchGrid selectedGrid)
+		{
+			ArrayList<StsPatchGrid> groupGrids = new ArrayList<>();   // set of grids for this group
+			ArrayList<StsPatchGrid> neighborGrids = new ArrayList<>();  // potential neighbor grids which might belong to grid
+			ArrayList<StsPatchGrid> rejectedGrids = new ArrayList<>();  // grids which don't qualify for group (overlap too much, etc)
+
+			// selected grid belongs to group, so add
+			neighborGrids.add(selectedGrid);
+			// array of booleans for all points added to group by grids indicating point has been filled; used to check for overlaps
+			//boolean[][] gridHasPoint = new boolean[nRows][nCols];
+			PatchPoint[][] groupPoints = new PatchPoint[nRows][nCols];
+			// loop over neighbor grids; add grid if it qualifies; regardless add it's new neighbors to end of neighborGrids array
+			// so neighborGrids will keep growing until all qualified grids are added and list is exhausted
+			for(int n = 0; n < neighborGrids.size(); n ++)
+			{
+				StsPatchGrid neighborGrid = neighborGrids.get(n);
+				if(!groupGrids.contains(neighborGrid) && !rejectedGrids.contains(neighborGrid))
+				{
+					int nOverlaps = 0;
+					int nNonOverlaps = 0;
+					PatchPoint[][] patchPoints = neighborGrid.patchPoints;
+					ArrayList<StsPatchGrid> newNeighborGrids = new ArrayList<>(); // newNeighborGrids is array of grids connected to this neighborGrid
+					ArrayList<NewGroupPoint> newGroupPoints = new ArrayList<>(); // possible new points; will not be added if grid not added
+					for(int r = 0, row = neighborGrid.rowMin; r < neighborGrid.nRows; r++, row++)
+					{
+						for (int c = 0, col = neighborGrid.colMin; c < neighborGrid.nCols; c++, col++)
+						{
+							PatchPoint patchPoint = patchPoints[r][c];
+							if (patchPoint == null) continue;
+							if (groupPoints[row][col] != null)
+								nOverlaps++;
+							else
+							{
+								newGroupPoints.add(new NewGroupPoint(row, col, patchPoint));
+								// groupPoints[row][col] = patchPoint;
+								nNonOverlaps++;
+							}
+							patchPoint.checkAddNewNeighborGrids(newNeighborGrids);
+						}
+					}
+					// criteria for new neighborGrid to be added to group: add regardless if few than 16 points
+					// or if number of non-overlapped points is more than twice the number of overlapped points
+					// don't add if none of this new neighborGrids connected grids (newNeighborGrids) connect back to a group grid.
+					// this prevents a grid from being added to the group which is not connected to the group;
+					// this might occur if the potentially connected grids didn't qualify for the group
+					if ( (neighborGrid.nPatchPoints < 16 || nNonOverlaps > 2 * nOverlaps ) &&
+							isNeighborGridConnected(newNeighborGrids, groupGrids))
+					{
+						addNewGroupPoints(groupPoints, newGroupPoints);
+						groupGrids.add(neighborGrid);
+						// for each of the new neighbor grids to this grid, add them to the neighborGrids array if not already in the array or rejected
+						for(StsPatchGrid newNeighborGrid : newNeighborGrids)
+							if(!alreadyDrawingGrid(newNeighborGrid) && !neighborGrids.contains(newNeighborGrid) && !rejectedGrids.contains(newNeighborGrid))
+								neighborGrids.add(newNeighborGrid);
+					}
+					else // if the grid doesn't qualify, put it on the rejected grids list; a subsequent neighbor grid might be connected
+					     // so we check the rejectedGrids to make sure it won't be processed again
+						rejectedGrids.add(neighborGrid);
+				}
+			}
+			return groupGrids;
+		}
+
+		void addNewGroupPoints(PatchPoint[][] groupPoints, ArrayList<NewGroupPoint> newGroupPoints)
+		{
+			for(NewGroupPoint newGroupPoint : newGroupPoints)
+			{
+				newGroupPoint.addTo(groupPoints);
+			}
+		}
+
+		public String toString()
+		{
+			return "selectedGrid: " + selectedGrid.toString() + " groupGrids: " + Arrays.toString(groupGrids.toArray());
+		}
+
+		class NewGroupPoint
+		{
+			int row;
+			int col;
+			PatchPoint point;
+
+			NewGroupPoint(int row, int col, PatchPoint point)
+			{
+				this.row = row;
+				this.col = col;
+				this.point = point;
+			}
+
+			void addTo(PatchPoint[][] groupPoints)
+			{
+				groupPoints[row][col] = point;
+			}
+		}
+
+		boolean alreadyDrawingGrid(StsPatchGrid newNeighborGrid)
+		{
+			return StsMath.arrayContains(drawPatchGrids, newNeighborGrid);
+		}
+
+		boolean isNeighborGridConnected(ArrayList<StsPatchGrid> newNeighborGrids, ArrayList<StsPatchGrid> groupGrids)
+		{
+			if(groupGrids.size() == 0) return true;
+			for(StsPatchGrid newNeighborGrid : newNeighborGrids)
+				if(groupGrids.contains(newNeighborGrid)) return true;
+			return false;
+		}
+	}
+
 	public void addRemoveSelectedPatch(StsCursorPoint cursorPoint)
 	{
 		float[] xyz = cursorPoint.point.v;
@@ -1475,7 +1615,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 
 		float iline = getRowNumFromRow(volumeRow);
 		float xline = getColNumFromCol(volumeCol);
-		StsMessageFiles.logMessage("Picked patch: " + selectedPatch.getPatchTypeString() + " " + selectedPatch.toFamilyString() + " at iline: " + iline + " xline: " + xline + " z: " + z);
+//		StsMessageFiles.logMessage("Picked patch: " + selectedPatch.getPatchTypeString() + " " + selectedPatch.toFamilyString() + " at iline: " + iline + " xline: " + xline + " z: " + z);
 	/*
 		if(cursorPoint.dirNo == StsCursor3d.YDIR)
             StsMessageFiles.logMessage("     volumeRow correl: " + selectedPatch.getVolumeRowCorrel(volumeRow, volumeCol));
@@ -1484,35 +1624,73 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
     */
 		// int nSheet = selectedPatch.nSheet;
 
-		boolean displayChildPatches = getPatchVolumeClass().getDisplayChildPatches();
-		if(displayChildPatches)
-			selectedPatch = selectedPatch.getParentGrid();
+//		boolean displayChildPatches = getPatchVolumeClass().getDisplayChildPatches();
+//		if(displayChildPatches)
+//			selectedPatch = selectedPatch.getParentGrid();
 
 		String addRemove;
-		boolean removePatch = StsMath.arrayContains(selectedPatchGrids, selectedPatch);
-		if (removePatch)
+		// if this selected patch is already being drawn, then selecting it means we wish to remove it and all grids in its group
+		PatchGridGroup removedGroup = patchGridGroupsContains(selectedPatch);
+		if (removedGroup != null)
 			addRemove = " removed ";
 		else
 			addRemove = " added ";
 
-		String gridsString = selectedPatch.getGridDescription();
-		StsMessageFiles.logMessage("Picked patch: " + selectedPatch.toFamilyString() + addRemove + " " + gridsString);
+//		String gridsString = selectedPatch.getGridDescription();
+		StsMessageFiles.logMessage(addRemove + " patch: " + selectedPatch.getPatchTypeString() + " " + selectedPatch.toFamilyString() + " at iline: " + iline + " xline: " + xline + " z: " + z);
 
-		if (removePatch)
-			selectedPatchGrids = (StsPatchGrid[]) StsMath.arrayDeleteElement(selectedPatchGrids, selectedPatch);
+		if (removedGroup != null)
+			// remove
+			removePatchGridGroup(removedGroup);
 		else
 		{
-			selectedPatchGrids = (StsPatchGrid[]) StsMath.arrayAddElement(selectedPatchGrids, selectedPatch);
+			addPatchGridGroup(selectedPatch);
 		}
 		currentModel.win3dDisplayAll();
 	}
 
-	private void clearSelectedPatches()
+	PatchGridGroup patchGridGroupsContains(StsPatchGrid selectedPatch)
 	{
-		selectedPatchGrids = null;
+		if(patchGridGroups == null) return null;
+		for(PatchGridGroup gridGroup : patchGridGroups)
+			if(gridGroup.selectedGrid == selectedPatch) return gridGroup;
+		return null;
 	}
 
-	public StsPatchGrid getRowSortedPatchGrd(int index)
+	void removePatchGridGroup(PatchGridGroup removedGroup)
+	{
+		patchGridGroups = (PatchGridGroup[])StsMath.arrayDeleteElement(patchGridGroups, removedGroup);
+		rebuildDrawPatches();
+	}
+
+	void rebuildDrawPatches()
+	{
+		if(patchGridGroups == null) return;
+		ArrayList<StsPatchGrid> drawPatchesList = new ArrayList<>();
+		for(PatchGridGroup gridGroup : patchGridGroups)
+		{
+			if(displayingChildPatches)
+				drawPatchesList.addAll(gridGroup.groupGrids);
+			else
+				drawPatchesList.add(gridGroup.selectedGrid);
+		}
+		drawPatchGrids = drawPatchesList.toArray(new StsPatchGrid[0]);
+	}
+
+
+	void addPatchGridGroup(StsPatchGrid selectedPatch)
+	{
+		PatchGridGroup newGridGroup = new PatchGridGroup(selectedPatch);
+		patchGridGroups = (PatchGridGroup[])StsMath.arrayAddElement(patchGridGroups, newGridGroup);
+		rebuildDrawPatches();
+	}
+
+	private void clearSelectedPatches()
+	{
+		patchGridGroups = null;
+	}
+
+	public StsPatchGrid getRowSortedPatchGrid(int index)
 	{
 		if (index <= 0 ||index >= rowSortedPatchGrids.length)
 		{
@@ -1552,18 +1730,6 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		}
 		return nearestPatch;
 	}
-/*
-    public void addSelectedPatch(int patchID)
-    {
-        if(patchID < 0 || patchID >= rowSortedPatchGrids.length)
-        {
-            StsException.systemError(this, "addSelectedPatch", "patchID out of range: " + patchID);
-            return;
-        }
-        StsPatchGrid selectedPatch = this.rowSortedPatchGrids[patchID];
-        selectedPatchGrids = (StsPatchGrid[])StsMath.arrayAddElement(selectedPatchGrids, selectedPatch);
-    }
-*/
 }
 
 class TracePoints
@@ -2534,12 +2700,15 @@ class PatchPoint implements Comparable<PatchPoint>
 		else return 0;
 	}
 
-	void setConnection(Connection connection)
+	void checkAddNewNeighborGrids(ArrayList<StsPatchGrid> newNeighborGrids)
 	{
-		if(connection.isRow())
-			setPrevRowConnection(connection);
-		else
-			setPrevColConnection(connection);
+		for(int i = 0; i < 4; i++)
+		{
+			if(connections[i] == null) continue;
+			StsPatchGrid newNeighborGrid = connections[i].getConnectedPatch(this);
+			if(newNeighborGrid != patchGrid && !newNeighborGrids.contains(newNeighborGrid))
+				newNeighborGrids.add(newNeighborGrid);
+		}
 	}
 
 	public String toString()
@@ -3043,7 +3212,6 @@ class CorrelationWindow implements Cloneable
 class Connection implements Cloneable
 {
 	PatchPoint prevPoint, nextPoint;
-	public byte linkType = LINK_NONE;
 	public float correlation;
 
 	Temp temp;
@@ -3119,8 +3287,6 @@ class Connection implements Cloneable
 		temp.next = next;
 	}
 
-	boolean isRow() { return linkType== LINK_LEFT || linkType == LINK_RIGHT; }
-
 	public final void addConnectionToPoints()
 	{
 		temp.addConnectionToPoints();
@@ -3146,6 +3312,24 @@ class Connection implements Cloneable
 	public float getNextZ()
 	{
 		return nextPoint.z;
+	}
+
+	/** For this connection and connected point, get the other connection point.
+	 *
+	 * @param point point from which this connection emanates
+	 * @return the other point.patch in the connection
+	 */
+	StsPatchGrid getConnectedPatch(PatchPoint point)
+	{
+		if(point == prevPoint)
+			return nextPoint.patchGrid;
+		else
+			return prevPoint.patchGrid;
+	}
+
+	public String toString()
+	{
+		return " Point: " + prevPoint.toString() + " to point: " + nextPoint.toString();
 	}
 
 	class Temp

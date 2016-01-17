@@ -1444,14 +1444,14 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	{
 		return z >= zMin && z <= zMax;
 	}
-
+/*
 	public void drawPatchGrid(GL gl, boolean displayChildPatches, boolean displayCurvature, StsColorscale colorscale)
 	{
 		draw(gl, displayCurvature, colorscale);
 		if (childGrid == null || !displayChildPatches) return;
 		childGrid.drawPatchGrid(gl, displayChildPatches, displayCurvature, colorscale);
 	}
-
+*/
 	public void draw(GL gl, boolean displayCurvature, StsColorscale colorscale)
 	{
 		if (debugPatchDraw && debugPatchID != NO_DEBUG && id == debugPatchID)
@@ -1515,9 +1515,10 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 
 	public String toString()
 	{
-		int childGridID = (childGrid == null ? -1 : childGrid.id);
-		int parentGridID = (parentGrid == null ? -1 : parentGrid.id);
-		return "id: " + id + " childGrid ID: " + childGridID + " parentGrid ID: " + parentGridID + " originalID: " + originalID + " nPatchPoints " + nPatchPoints;
+		return "id: " + id + " ";
+		// int childGridID = (childGrid == null ? -1 : childGrid.id);
+		// int parentGridID = (parentGrid == null ? -1 : parentGrid.id);
+		// return "id: " + id + " childGrid ID: " + childGridID + " parentGrid ID: " + parentGridID + " originalID: " + originalID + " nPatchPoints " + nPatchPoints;
 	}
 
 	public String toGridString()
