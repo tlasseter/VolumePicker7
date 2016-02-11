@@ -25,7 +25,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	public StsPatchGrid parentGrid = null;
 	/** childGrid is the next grid in the linked-list. */
 	public StsPatchGrid childGrid = null;
-	/** the original id of this patch in gridList; saved when patch is re-indexed and is used for debugging purposes */
+	/** the original id of this patch in gridList; saved when patch is merged to another grid and is used for debugging purposes */
 	int originalID = -1;
 	/** type of this grid: Min, Max +Zero-crossing, or -Zero-crossing */
 	byte patchType;
@@ -38,7 +38,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	float zMax = -StsParameters.largeFloat;
 
 	float[][] pointsZ;
-	StsGridLink[][][] gridLinks;
+	Connection[][][] gridConnections;
 
 	transient PatchPoint[][] patchPoints = null;
 	/** flag indicating this patchGrid has been added to current patchVolume.rowGrids hashmap list; avoids overhead of trying to re-add */
@@ -86,9 +86,8 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 
 	static final float[] verticalNormal = new float[]{0.0f, 0.0f, -1.0f};
 
-	/** forward links are: 0->1, 1->2, 3-> 2, and 0->3. So indexes are 0, 1, 3, 0 and directions are 0, 1, 0, 1 */
-	static final int[] forwardIndex = { 0, 1, 3, 0 };
-	static final int[] forwardDirs = { 0, 1, 0, 1 };
+	/** Connections are defined in forward direction starting from lower left  */
+	static final boolean[] isForwardDir = { true, true, false, false };
 	/** row index offsets from lower-left corner of cell to each of the four corner points */
 	static final int[] ccwDRow = { 0, 0, 1, 1 };
 	/** col index offsets from lower-left corner of cell to each of the four corner points */
@@ -106,11 +105,11 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	/** col index offsets from this index to next index */
 	static final int[] nextDCol = { 1, 0, -1, 0 };
 
-	static final public byte LINK_NONE = StsGridLink.LINK_NONE;
-	static final public byte LINK_UP = StsGridLink.LINK_UP;
-	static final public byte LINK_LEFT = StsGridLink.LINK_LEFT;
-	static final public byte LINK_DOWN = StsGridLink.LINK_DOWN;
-	static final public byte LINK_RIGHT = StsGridLink.LINK_RIGHT;
+	static final public byte LINK_NONE = Connection.LINK_NONE;
+	static final public byte LINK_UP = Connection.LINK_UP;
+	static final public byte LINK_LEFT = Connection.LINK_LEFT;
+	static final public byte LINK_DOWN = Connection.LINK_DOWN;
+	static final public byte LINK_RIGHT = Connection.LINK_RIGHT;
 
 	/*---------------------------- SYSTEM DEBUG FLAGS (DON'T EDIT) ---------------------------------------------------*/
 	/** a static final: if false, all blocks bounded by this boolean will not be compiled or checked */
@@ -533,7 +532,8 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 			{
 				if (childGrid == this)
 				{
-					parentGrid.childGrid = childGrid.childGrid;
+					parentGrid.childGrid = this.childGrid;
+					this.childGrid = null;
 				}
 				parentGrid = childGrid;
 				childGrid = childGrid.childGrid;
@@ -862,7 +862,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		{
 			if (patchPoint == null || patchPoint.getRow() != debugPointRow || patchPoint.getCol() != debugPointCol)
 				return false;
-			if (patchPoint.slice == debugPointSlice) return true;
+			if (patchPoint.getSlice() == debugPointSlice) return true;
 		}
 		return debug && debugPatchGrid && patchPoint.patchGrid != null && patchPoint.patchGrid.id == debugPatchID;
 	}
@@ -873,7 +873,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		{
 			if (patchPoint == null || volRow != debugPointRow || volCol != debugPointCol)
 				return false;
-			if (patchPoint.slice == debugPointSlice) return true;
+			if (patchPoint.getSlice() == debugPointSlice) return true;
 		}
 		return debug && debugPatchGrid && patchPoint.patchGrid != null && patchPoint.patchGrid.id == debugPatchID;
 	}
@@ -936,7 +936,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 
 	boolean isTooSmall(int minNPoints)
 	{
-		return nPatchPoints < minNPoints;
+		return nPatchPoints <= minNPoints;
 	}
 
 	public void resetIndex(int index)
@@ -964,7 +964,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		try
 		{
 			pointsZ = new float[nRows][nCols];
-			gridLinks = new StsGridLink[nRows][nCols][];
+			gridConnections = new Connection[nRows][nCols][];
 			for (int row = 0; row < nRows; row++)
 			{
 				for (int col = 0; col < nCols; col++)
@@ -976,7 +976,9 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 						pointsZ[row][col] = z;
 						zMin = Math.min(zMin, z);
 						zMax = Math.max(zMax, z);
-						gridLinks[row][col] = patchPoint.createGridLinks();
+						gridConnections[row][col] = patchPoint.getConnections();
+						if (!StsPatchVolume.debug)
+							patchPoint.nullTemps();
 					}
 					else
 					{
@@ -984,7 +986,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					}
 				}
 			}
-			if (!StsPatchVolume.debug) patchPoints = null;
+
 		}
 		catch (Exception e)
 		{
@@ -992,7 +994,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		}
 	}
 
-	public StsGridLink[][][] getGridLinks() { return gridLinks; }
+	public Connection[][][] getGridConnections() { return gridConnections; }
 
 	/** get nearest patch whose z at this x,y is just above the z slice plane */
 	public float getZDistance(int volumeRow, int volumeCol, float z)
@@ -1288,8 +1290,8 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 			float colX = patchVolume.xMin + colMin*patchVolume.xInc;
 			for(col = 0; col < nCols; col++, colX += patchVolume.xInc)
 			{
-				StsGridLink link = getGridLink(row, col, LINK_RIGHT);
-				if (link != null)
+				Connection connection = getConnection(row, col, LINK_RIGHT);
+				if (connection != null)
 				{
 					z = pointsZ[row][col];
 					if (displayCurvature)
@@ -1312,11 +1314,11 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 							gl.glVertex2f(colX, z);
 					}
 					if (is3d)
-						gl.glVertex3f(colX+patchVolume.xInc, rowY, link.zNext);
+						gl.glVertex3f(colX+patchVolume.xInc, rowY, connection.getNextZ());
 					else
-						gl.glVertex2f(colX+patchVolume.xInc, link.zNext);
+						gl.glVertex2f(colX+patchVolume.xInc, connection.getNextZ());
 
-					if(link.gridNext != this)
+					if(connection.getNextPatchGrid() != this)
 					{
 						gl.glEnd();
 						isDrawing = false;
@@ -1350,7 +1352,6 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	}
 	/**
 	 * @param gl GL state
-	 * @param volRow volume row to draw
 	 * @param colorscale colorscale used in drawing curvature
 	 * @param displayCurvature true if we wish to display curvature
 	 */
@@ -1369,8 +1370,8 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 			float rowY = patchVolume.yMin + rowMin*patchVolume.yInc;
 			for(row = 0; row < nRows; row++, rowY += patchVolume.yInc)
 			{
-				StsGridLink link = getGridLink(row, col, LINK_UP);
-				if (link != null)
+				Connection connection = getConnection(row, col, LINK_UP);
+				if (connection != null)
 				{
 					float z = pointsZ[row][col];
 					if (displayCurvature)
@@ -1393,11 +1394,11 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 							gl.glVertex2f(rowY, z);
 					}
 					if (is3d)
-						gl.glVertex3f(colX, rowY+patchVolume.yInc, link.zNext);
+						gl.glVertex3f(colX, rowY+patchVolume.yInc, connection.getNextZ());
 					else
-						gl.glVertex2f(rowY+patchVolume.yInc, link.zNext);
+						gl.glVertex2f(rowY+patchVolume.yInc, connection.getNextZ());
 
-					if(link.gridNext != this)
+					if(connection.getNextPatchGrid() != this)
 					{
 						gl.glEnd();
 						isDrawing = false;
@@ -1423,44 +1424,37 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		}
 	}
 
-	StsGridLink getGridLink(int row, int col, int dir)
+	Connection getConnection(int row, int col, int dir)
 	{
 
-		if(gridLinks == null) return null;
+		if(gridConnections == null) return null;
 		if(!isInsideGridRowCol(row, col)) return null;
-		if(gridLinks[row][col] == null) return null;
-		return gridLinks[row][col][dir];
+		if(gridConnections[row][col] == null) return null;
+		return gridConnections[row][col][dir];
 	}
 
-	StsGridLink[] getGridLinks(int row, int col)
+	Connection[] getConnections(int row, int col)
 	{
-		if(gridLinks == null) return null;
+		if(gridConnections == null) return null;
 		if(!isInsideGridRowCol(row, col)) return null;
-		return gridLinks[row][col];
-	}
-
-	private boolean hasGridLink(int row, int col, byte dir)
-	{
-		StsGridLink gridLink = gridLinks[row][col][dir];
-		if(gridLink == null) return false;
-		return gridLink.correlation > patchVolume.minDisplayCorrel;
+		return gridConnections[row][col];
 	}
 
 	public boolean isPatchGridNearZCursor(float z)
 	{
 		return z >= zMin && z <= zMax;
 	}
-
+/*
 	public void drawPatchGrid(GL gl, boolean displayChildPatches, boolean displayCurvature, StsColorscale colorscale)
 	{
 		draw(gl, displayCurvature, colorscale);
 		if (childGrid == null || !displayChildPatches) return;
 		childGrid.drawPatchGrid(gl, displayChildPatches, displayCurvature, colorscale);
 	}
-
+*/
 	public void draw(GL gl, boolean displayCurvature, StsColorscale colorscale)
 	{
-		if (debug && debugPatchDraw && debugPatchID != NO_DEBUG && id == debugPatchID)
+		if (debugPatchDraw && debugPatchID != NO_DEBUG && id == debugPatchID)
 			StsException.systemDebug(this, "draw", "drawing patch " + id);
 
 		if (pointsZ == null) return;
@@ -1484,6 +1478,41 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		drawGridLines(gl, colorscale, displayCurvature);
 		glPanel3d.resetViewShift(gl);
 		gl.glEnable(GL.GL_LIGHTING);
+		// TriangleStrip.drawSurfaceFillWithNulls(gl, this, tStrips, pointsZ, tStripNormals, true);
+	}
+
+
+	public void drawOnZCursor2d(GL gl, boolean displayCurvature, StsColorscale colorscale)
+	{
+		gl.glDisable(GL.GL_LIGHTING);
+
+		if (debugPatchDraw && debugPatchID != NO_DEBUG && id == debugPatchID)
+			StsException.systemDebug(this, "draw", "drawing patch " + id);
+
+		if (pointsZ == null) return;
+		if (gridCells == null) gridCells = new GridCells();
+		if (displayCurvature && values != null)
+		{
+			setValues(values);
+			gridCells.drawSurfaceFillValuesWithNulls(gl, displayCurvature, colorscale);
+		}
+		else
+		{
+			gridCells.drawSurfaceFillWithNulls2d(gl);
+		}
+		gl.glEnable(GL.GL_LIGHTING);
+
+		// draw grid lines
+		/*
+		StsColor.BLACK.setGLColor(gl);
+		gl.glDisable(GL.GL_LIGHTING);
+		StsGLPanel3d glPanel3d = currentModel.getGlPanel3d();
+		gl.glLineWidth(StsGraphicParameters.gridLineWidth);
+		glPanel3d.setViewShift(gl, StsGraphicParameters.gridShift);
+		drawGridLines(gl, colorscale, displayCurvature);
+		glPanel3d.resetViewShift(gl);
+		gl.glEnable(GL.GL_LIGHTING);
+		*/
 		// TriangleStrip.drawSurfaceFillWithNulls(gl, this, tStrips, pointsZ, tStripNormals, true);
 	}
 
@@ -1521,10 +1550,10 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 
 	public String toString()
 	{
-		String rowColString = super.toString();
-		int childGridID = (childGrid == null ? -1 : childGrid.id);
-		int parentGridID = (parentGrid == null ? -1 : parentGrid.id);
-		return "id: " + id + " childGrid ID: " + childGridID + " parentGrid ID: " + parentGridID + " originalID: " + originalID + " nPatchPoints " + nPatchPoints;
+		return "id: " + id + " ";
+		// int childGridID = (childGrid == null ? -1 : childGrid.id);
+		// int parentGridID = (parentGrid == null ? -1 : parentGrid.id);
+		// return "id: " + id + " childGrid ID: " + childGridID + " parentGrid ID: " + parentGridID + " originalID: " + originalID + " nPatchPoints " + nPatchPoints;
 	}
 
 	public String toGridString()
@@ -1543,22 +1572,6 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		int childGridID = (childGrid == null ? -1 : childGrid.id);
 		int parentGridID = (parentGrid == null ? -1 : parentGrid.id);
 		return getFamilyTypeString() + " id: " + id + " child ID: " + childGridID + " parent ID: " + parentGridID + " original ID: " + originalID;
-	}
-
-	public String parentString()
-	{
-		if (parentGrid == null)
-			return " null ";
-		else
-			return new String(" " + parentGrid.id + " ");
-	}
-
-	public String childString()
-	{
-		if (childGrid == null)
-			return " null ";
-		else
-			return new String(" " + childGrid.id + " ");
 	}
 
 	public StsPatchGrid getParentGrid()
@@ -1672,26 +1685,6 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		return new float[]{xy[0], xy[1], z};
 	}
 
-	public StsPoint getPoint(float rowF, float colF)
-	{
-		return null;
-	} // not used
-
-	public float[] getXYZorT(float rowF, float colF)
-	{
-		return null;
-	} // not used
-
-	public float[] getNormal(float rowF, float colF)
-	{
-		return null;
-	} // not used
-
-	public float getZInc()
-	{
-		return 0.0f;
-	} // not used
-
 	public float getZMin()
 	{
 		return zMin;
@@ -1755,28 +1748,6 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	{
 		if(patchPoint == null) return null;
 		return getVolPatchPoint(patchPoint.getRow(), patchPoint.getCol());
-	}
-
-	/** Given an existing patchPoint probably on another grid: find point at same location on this grid - pointOnGrid;
-	 *  if it doesn't exist, clone patchPoint onto this grid and return; if pointOnGrid is already cloned,
-	 *  then use that one; if pointOnGrid is different slice than patchPoint, then they are different so return null;
-	 *  if pointOnGrid is same as patchPoint (shouldn't happen though), clone it and return it.
-	 *
-	 * @param patchPoint
-	 * @return
-	 */
-	public PatchPoint getClonedPointOnGrid(PatchPoint patchPoint)
-	{
-		if(patchPoint == null) return null;
-		PatchPoint pointOnGrid = getVolPatchPoint(patchPoint);
-		if(pointOnGrid == null)
-			return patchPoint.cloneOnGrid(this);
-		else if(pointOnGrid.isCloned())
-			return pointOnGrid;
-		else if(pointOnGrid == patchPoint)
-			return pointOnGrid;
-		else // pointOnGrid and patchPoint are not the same, so return null
-			return null;
 	}
 
 	public boolean isInsidePatchRowCol(int row, int col)
@@ -1893,21 +1864,21 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 
 		idif[1] = patchVolume.yInc;
 		jdif[0] = patchVolume.xInc;
-		StsGridLink[] gridLinks = getGridLinks(patchRow, patchCol);
-		if(gridLinks == null)
+		Connection[] connections = getConnections(patchRow, patchCol);
+		if(connections == null)
 		{
-			StsException.systemError(this, "computeSmoothGridNormal", "no gridLinks at point for normal");
+			StsException.systemError(this, "computeSmoothGridNormal", "no gridConnections at point for normal");
 			return null;
 		}
-		idif[2] = getZDif(z, gridLinks[LINK_DOWN], gridLinks[LINK_UP]);
-		jdif[2] = getZDif(z, gridLinks[LINK_LEFT], gridLinks[LINK_RIGHT]);
+		idif[2] = getZDif(z, connections[LINK_DOWN], connections[LINK_UP]);
+		jdif[2] = getZDif(z, connections[LINK_LEFT], connections[LINK_RIGHT]);
 		return StsMath.crossProduct(idif, jdif);
 	}
 
-	final private float getZDif(float z, StsGridLink minusLink, StsGridLink plusLink)
+	final private float getZDif(float z, Connection minusConnection, Connection plusConnection)
 	{
-		float zMinus = StsGridLink.getNextZ(minusLink);
-		float zPlus = StsGridLink.getNextZ(plusLink);
+		float zMinus = Connection.staticGetPrevZ(minusConnection);
+		float zPlus = Connection.staticGetNextZ(plusConnection);
 		return getZDif(zMinus, z, zPlus);
 	}
 
@@ -1934,7 +1905,6 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	 * @param otherPatchGrid grid where we want to define the grid local row and col
 	 * @param patchRowCol patchRow and patchCol of the lower-left on this grid (StsPatchGrid.this) which may be different
 	 *                    than otherPatchGrid
-	 * @param ccwIndex
 	 * @return
 	 */
 	int[] getRelativeGridPatchRowCol(StsPatchGrid otherPatchGrid, int[] patchRowCol)
@@ -2041,6 +2011,29 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 						gridCells[row][col].drawCell(gl);
 		}
 
+		public void drawSurfaceFillWithNulls2d(GL gl)
+		{
+			try
+			{
+				drawRowCellsWithNulls2d(gl);
+			}
+			catch(Exception e)
+			{
+				StsException.outputWarningException(this, "drawSurfaceFillWithNulls", e);
+			}
+		}
+
+		private void drawRowCellsWithNulls2d(GL gl)
+		{
+			gl.glDisable(GL.GL_LIGHTING);
+			StsTraceUtilities.getPointTypeColor(patchType).setGLColor(gl);
+			for (int row = 0; row < nCellRows; row++)
+				for (int col = 0; col < nCellCols; col++)
+					if(gridCells[row][col] != null)
+						gridCells[row][col].drawCell2d(gl);
+			gl.glEnable(GL.GL_LIGHTING);
+		}
+
 		GridCell gridCellConstructor(int row, int col)
 		{
 			GridCell gridCell = new GridCell(row, col);
@@ -2142,7 +2135,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					cornerPoint = cornerLinkPoints[i];
 					if (cornerPoint == null) continue;
 					if(cornerPoint.nextLinkPoint == null)
-						cornerPoint = null;
+						cornerLinkPoints[i] = null;
 					else
 						isOk = true;
 				}
@@ -2175,8 +2168,8 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				LinkTriangle nextLinkTriangle = linkTriangles[0];
 				for (int n = 0; n < nTriangles; n++)
 				{
-					LinkTriangle linkTriangle = nextLinkTriangle;
-					nextLinkTriangle = linkTriangles[(n+1)%nTriangles];
+					LinkTriangle linkTriangle = linkTriangles[n];
+					nextLinkTriangle = getNextTriangle(linkTriangles, nTriangles, n);
 					if(linkTriangle == null || nextLinkTriangle == null) continue;
 					linkTriangle.checkSetTriangleIsConnected(nextLinkTriangle);
 					// linkTriangle.setPointNormals();
@@ -2225,6 +2218,24 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				return true;
 			}
 
+			/** given a sequence of triangles ccw from side 0 (which may not adjoin),
+			 *  return the next adjoining triangle by comparing side numbers which equal the index of the first point.
+			 * @param linkTriangles triangle array
+			 * @param nTriangles length of triangle array
+			 * @param n index of current triangle
+			 * @return next triangle if adjoining or null if none adjoining
+			 */
+			LinkTriangle getNextTriangle(LinkTriangle[] linkTriangles, int nTriangles, int n)
+			{
+				LinkTriangle triangle = linkTriangles[n];
+				int sideIndex = triangle.point.pointCcwIndex;
+				LinkTriangle nextTriangle = linkTriangles[(n+1)%nTriangles];
+				int nextSideIndex = nextTriangle.point.pointCcwIndex;
+				if(nextSideIndex == (sideIndex+1)%4)
+					return nextTriangle;
+				else
+					return null;
+			}
 			/** Given a set of connected triangles, iterate through the sequence of points from the point just before
 			 *  the first triangle to the point after the last triangle.  Terminate this iteration if and when the
 			 *  first point in the sequence is encountered. This sequence of points is used to define the values of
@@ -2337,6 +2348,34 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				}
 			}
 
+			void drawCell2d(GL gl)
+			{
+				boolean isDrawing = false;
+				int i = 0;
+				try
+				{
+					for(LinkTriangle triangle : linkTriangles)
+					{
+						// TODO: drawTriangle2d is failing after drawing a line when it draws the next triangle-fan: FIX!
+						isDrawing = triangle.drawTriangle2dDebug(gl, isDrawing);
+						i++;
+					}
+				}
+				catch(Exception e)
+				{
+					StsException.outputWarningException(this, "drawCell", "Failed for linkTriangle index " + i, e);
+					if(isDrawing)
+					{
+						gl.glEnd();
+						isDrawing = false;
+					}
+				}
+				finally
+				{
+					if(isDrawing) gl.glEnd();
+				}
+			}
+
 			public String toString()
 			{
 				return " cell row " + row + " cell col " + col;
@@ -2378,11 +2417,11 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				void setNextLinkPoint(LinkPoint nextCornerPoint)
 				{
 					if(nextLinkPoint != null) return;
-					StsGridLink nextGridLink = grid.getGridLink(pointPatchRow, pointPatchCol, pointCcwIndex);
-					if(nextGridLink == null) return;
+					Connection nextGridConnection = grid.getConnection(pointPatchRow, pointPatchCol, pointCcwIndex);
+					if(nextGridConnection == null) return;
 
 					// get the grid this new LinkPoint is on which may be different than the grid this LinkPoint is on
-					StsPatchGrid nextGrid = nextGridLink.gridNext;
+					StsPatchGrid nextGrid = nextGridConnection.getNextPatchGrid(pointCcwIndex);
 					// if the same grid, then set to nextCornerPoint
 					if(nextCornerPoint != null && nextGrid == this.grid)
 					{
@@ -2403,18 +2442,17 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				}
 				/** Given a link point (this) which is the first point of the given link,
 				 *  return the point on the previous link just before this point ( the nextPoint of the prev link)
-				 * @param sideIndex
 				 * @return
 				 */
 				void setPrevLinkPoint(LinkPoint prevCornerPoint)
 				{
 					if(prevLinkPoint != null) return;
 
-					StsGridLink prevGridLink = grid.getGridLink(pointPatchRow, pointPatchCol, nextCcwIndex[pointCcwIndex]);
-					if(prevGridLink == null) return;
+					Connection prevGridConnection = grid.getConnection(pointPatchRow, pointPatchCol, nextCcwIndex[pointCcwIndex]);
+					if(prevGridConnection == null) return;
 
 					// get the grid this new LinkPoint is on which may be different than the grid this LinkPoint is on
-					StsPatchGrid prevGrid = prevGridLink.gridNext;
+					StsPatchGrid prevGrid = prevGridConnection.getNextPatchGrid(nextCcwIndex[pointCcwIndex]);;
 					// if the same grid, then set to nextCornerPoint
 					if(prevCornerPoint != null && prevGrid == this.grid)
 					{
@@ -2435,9 +2473,6 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				}
 
 				/** we want a normal at a point on grid
-				 * @param linkPoint.grid grid we want the normal on
-				 * @param linkPoint.patchRow pointPatchRow on this grid
-				 * @param linkPoint.patchCol pointPatchCol on this grid
 				 * @return normal at the point defined on grid
 				 */
 				void computeRelativeCellPatchPointNormal()
@@ -2449,14 +2484,12 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				}
 
 				/** determines whether this point has orthogonal side links in either direction
-				 *
-				 * @param sideIndex cell side index of the CellGridLink link which has this point; link is the calling class
 				 * @return true if this link has any orthogonal side links in either direction
 				 */
-				boolean hasSideLinks(int sideCcwIndex)
+				boolean hasSideConnections(int sideCcwIndex)
 				{
-					StsGridLink[] gridLinks = grid.getGridLinks(pointPatchRow, pointPatchCol);
-					return gridLinks[prevCcwIndex[sideCcwIndex]] != null || gridLinks[nextCcwIndex[sideCcwIndex]] != null;
+					Connection[] connections = grid.getConnections(pointPatchRow, pointPatchCol);
+					return connections[prevCcwIndex[sideCcwIndex]] != null || connections[nextCcwIndex[sideCcwIndex]] != null;
 				}
 
 				public boolean equals(LinkPoint otherPoint)
@@ -2482,18 +2515,18 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					gl.glVertex3f(colX + celldXs[pointCcwIndex], rowY + celldYs[pointCcwIndex], z);
 				}
 
-				void drawNextPointAndNormal(GL gl)
+				void drawPoint2d(GL gl)
 				{
 					if(debug)
 					{
-						if(nextLinkPoint == null)
+						if(z == nullValue)
 						{
-							StsException.systemDebug(this, "drawNextPoint",
-									"zNext is null for patch " +  id + " row " + row + " col " + col + " link index " + pointCcwIndex);
+							StsException.systemDebug(this, "drawPoint",
+									"z is null for patch " +  id + " row " + row + " col " + col + " link index " + pointCcwIndex);
 							return;
 						}
 					}
-					nextLinkPoint.drawPointAndNormal(gl);
+					gl.glVertex2f(colX + celldXs[pointCcwIndex], rowY + celldYs[pointCcwIndex]);
 				}
 
 				void drawNormal(GL gl)
@@ -2560,7 +2593,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					this.point = point;
 					nextPoint = point.nextLinkPoint;
 					int sideCcwIndex = point.pointCcwIndex;
-					isLine = !point.hasSideLinks(sideCcwIndex) && !nextPoint.hasSideLinks(sideCcwIndex);
+					isLine = !point.hasSideConnections(sideCcwIndex) && !nextPoint.hasSideConnections(sideCcwIndex);
 				}
 
 				void checkSetTriangleIsConnected(LinkTriangle nextTriangle)
@@ -2572,20 +2605,18 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				{
 					if(!isLine)
 					{
-						// Cell is drawn with possibly connected triangles using a fan draw
+						// Cell is drawn with possibly connected triangles using a triangle fan draw
 						// If we drew the previous triangle and it wasn't split from this one, just drawn the next point and normal
 						// If aren't currently drawing (no previous triangle or it was split from this one at common corner),
 						// then draw the complete triangle.
-						if (isDrawing)
-							point.drawNextPointAndNormal(gl);
-						else
+						if (!isDrawing)
 						{
 							gl.glBegin(GL.GL_TRIANGLE_FAN);
-							drawCenterPoint(gl);
+							drawCenterPointAndNormal(gl);
 							point.drawPointAndNormal(gl);
-							nextPoint.drawPointAndNormal(gl);
 							isDrawing = true;
 						}
+						nextPoint.drawPointAndNormal(gl);
 						// if isDrawing and the first point is split  (doesn't share common point with previous side),
 						// then terminate drawing
 						if(isDrawing && !nextTriangleConnected)
@@ -2615,23 +2646,114 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					return isDrawing;
 				}
 
-				private void drawCenterPoint(GL gl)
+				private void drawCenterPointAndNormal(GL gl)
 				{
 					if(debug)
 					{
 						if (centerNormal == null)
 						{
-							StsException.systemDebug(this, "drawCenterPoint", "normal is null");
+							StsException.systemDebug(this, "drawCenterPointAndNormal", "normal is null");
 							return;
 						}
 						if (centerZ == nullValue)
 						{
-							StsException.systemDebug(this, "drawCenterPoint", "z is null");
+							StsException.systemDebug(this, "drawCenterPointAndNormal", "z is null");
 							return;
 						}
-						gl.glNormal3fv(centerNormal, 0);
-						gl.glVertex3f(centerX, centerY, centerZ);
 					}
+					gl.glNormal3fv(centerNormal, 0);
+					gl.glVertex3f(centerX, centerY, centerZ);
+				}
+
+				private boolean drawTriangle2dDebug(GL gl, boolean isDrawing)
+				{
+					if(!isLine)
+					{
+						// Cell is drawn with possibly connected triangles using a triangle fan draw
+						// If we drew the previous triangle and it wasn't split from this one, just drawn the next point and normal
+						// If aren't currently drawing (no previous triangle or it was split from this one at common corner),
+						// then draw the complete triangle.
+
+						gl.glBegin(GL.GL_TRIANGLES);
+						drawCenterPoint2d(gl);
+						point.drawPoint2d(gl);
+						nextPoint.drawPoint2d(gl);
+						gl.glEnd();
+					}
+					else // link has no side links so draw as a colored line
+					{
+						if(point.pointCcwIndex < 2) // don't draw line twice (it will be drawn by both cells on side
+						{
+							gl.glLineWidth(StsGraphicParameters.edgeLineWidthHighlighted);
+							gl.glBegin(GL.GL_LINES);
+							point.drawPoint2d(gl);
+							nextPoint.drawPoint2d(gl);
+							gl.glEnd();
+						}
+					}
+					return false;
+				}
+				private boolean drawTriangle2d(GL gl, boolean isDrawing)
+				{
+					if(!isLine)
+					{
+						// Cell is drawn with possibly connected triangles using a triangle fan draw
+						// If we drew the previous triangle and it wasn't split from this one, just drawn the next point and normal
+						// If aren't currently drawing (no previous triangle or it was split from this one at common corner),
+						// then draw the complete triangle.
+						if (!isDrawing)
+						{
+							gl.glBegin(GL.GL_TRIANGLE_FAN);
+							drawCenterPoint2d(gl);
+							point.drawPoint2d(gl);
+							isDrawing = true;
+						}
+						nextPoint.drawPoint2d(gl);
+						// if isDrawing and the first point is split  (doesn't share common point with previous side),
+						// then terminate drawing
+						if(isDrawing && !nextTriangleConnected)
+						{
+							gl.glEnd();
+							isDrawing = false;
+						}
+					}
+					else // link has no side links so draw as a colored line
+					{
+						if(isDrawing) // may be drawing if previous side is a triangle and not split at first point
+						{
+							isDrawing = false;
+							gl.glEnd();
+						}
+						if(point.pointCcwIndex < 2) // don't draw line twice (it will be drawn by both cells on side)
+						{
+							gl.glDisable(GL.GL_LIGHTING);
+							gl.glLineWidth(StsGraphicParameters.edgeLineWidthHighlighted);
+							gl.glBegin(GL.GL_LINES);
+							point.drawPoint2d(gl);
+							nextPoint.drawPoint2d(gl);
+							gl.glEnd();
+							gl.glEnable(GL.GL_LIGHTING);
+						}
+					}
+					return isDrawing;
+				}
+
+				private void drawCenterPoint2d(GL gl)
+				{
+					if(debug)
+					{
+						if (centerZ == nullValue)
+						{
+							StsException.systemDebug(this, "drawCenterPointAndNormal", "z is null");
+							return;
+						}
+					}
+					gl.glVertex2f(centerX, centerY);
+				}
+
+				public String toString()
+				{
+					return "Triangle: " + point.toString() +  " to " + nextPoint.toString();
 				}
 			}
 		}

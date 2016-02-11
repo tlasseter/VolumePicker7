@@ -228,7 +228,7 @@ public class StsModel extends StsSerialize
     /**
      * version number (changed with each version release)
      */
-    static public final String version = "Picker7";
+    static public final String version = "Picker9";
 
     /**
      * CANNOT_START (red) - required input not available
