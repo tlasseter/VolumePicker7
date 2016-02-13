@@ -108,7 +108,7 @@ public class Main
             {
                 public void run()
                 {
-                    createShareableContext();
+                    // createShareableContext();
                     runApplication();
                     System.out.println("launched app");
                 }

@@ -194,6 +194,8 @@ public class StsViewPersistManager implements StsSerializable
     /** read views database and construct views, restoring positions and states */
     public StsWin3d restore(boolean initialPanelConfiguration)
     {
+        // in case we are loading a new database in a current session, null out the shareableContext
+        StsGLPanel.shareableContext = null;
         if (workflowName != null) model.loadWorkflowPlugIn(workflowName);
 
         if (families == null || families.length == 0)

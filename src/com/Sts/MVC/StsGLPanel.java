@@ -185,6 +185,8 @@ public class StsGLPanel extends JPanel implements StsGLDrawable, StsSerializable
         glCapabilities.setDoubleBuffered(true);
     }
 
+    static GLContext shareableContext = null;
+
     static public final Dimension size00 = new Dimension(0, 0);
 
     /** default constructor: not normally used */
@@ -273,10 +275,17 @@ public class StsGLPanel extends JPanel implements StsGLDrawable, StsSerializable
 
         try
         {
-			GLContext shareableContext = Main.sharedContext;
-			glc = new GLCanvas(glCapabilities, null, shareableContext, g);
-			gld = (GLAutoDrawable) glc;
-			//shareableContext.makeCurrent();
+            if(shareableContext == null)
+            {
+                glc = new GLCanvas(glCapabilities);
+                gld = (GLAutoDrawable) glc;
+                shareableContext = gld.getContext();
+            }
+            else
+            {
+                glc = new GLCanvas(glCapabilities, null, shareableContext, g);
+                gld = (GLAutoDrawable) glc;
+            }
         }
         catch(Exception e)
         {
