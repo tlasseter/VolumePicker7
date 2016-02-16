@@ -179,6 +179,7 @@ public class StsView3d extends StsView implements StsSerializable
 
 	protected void initializeView()
 	{
+		gl = glPanel3d.getGL();
 		gl.glDrawBuffer(GL.GL_BACK);
 		gl.glShadeModel(GL.GL_SMOOTH);
 		gl.glEnable(GL.GL_NORMALIZE);

@@ -102,7 +102,7 @@ public class StsEditWellMarkersPanel extends StsActionPanel
 
     public void reshape(int x, int y, int width, int height)
     {
-        super.reshape(x, y, width, height);
+        super.setBounds(x, y, width, height);
     }
 
     public Object getSelectedWell()

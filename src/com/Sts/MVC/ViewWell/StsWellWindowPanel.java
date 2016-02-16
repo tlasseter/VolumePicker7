@@ -101,8 +101,8 @@ public class StsWellWindowPanel extends StsMultiSplitPane
     public void reshape(int x, int y, int width, int height)
     {
 
-		innerPanel.reshape(x,y,width,height);
-        super.reshape(x, y, width, height);
+		innerPanel.setBounds(x,y,width,height);
+        super.setBounds(x, y, width, height);
     }
 /*
     private boolean initializeView(StsModel model)

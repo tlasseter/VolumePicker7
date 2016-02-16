@@ -484,9 +484,10 @@ public class StsSeismicCurtainView extends StsView2d implements StsSerializable,
         textureTiles.deleteDisplayLists(gl);
         textureChanged = true;
     }
-
+    /*
     protected void initializeView()
     {
+        gl = glPanel.getGL();
         gl.glShadeModel(GL.GL_FLAT);
         gl.glEnable(GL.GL_ALPHA_TEST);
         gl.glAlphaFunc(GL.GL_GREATER, 0.1f);
@@ -496,7 +497,7 @@ public class StsSeismicCurtainView extends StsView2d implements StsSerializable,
         computeProjectionMatrix();
         computeModelViewMatrix();
     }
-
+    */
     /** Set the aspect ratio to 1:1. */
     public void aspectRatio()
     {

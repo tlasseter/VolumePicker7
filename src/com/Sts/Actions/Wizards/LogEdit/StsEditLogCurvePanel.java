@@ -102,7 +102,7 @@ public class StsEditLogCurvePanel extends StsActionPanel
 
     public void reshape(int x, int y, int width, int height)
     {
-        super.reshape(x, y, width, height);
+        super.setBounds(x, y, width, height);
     }
 
 	private void savePreviousWellViewModel()

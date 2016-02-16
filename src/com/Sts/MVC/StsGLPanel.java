@@ -686,7 +686,7 @@ public class StsGLPanel extends JPanel implements StsGLDrawable, StsSerializable
         // jbw 1/23/2010 dump the reshapes to hopefully let swing do it better.
 
         setViewPort(x, y, width, height);
-        glc.reshape(x, y, width, height);
+        glc.setBounds(x, y, width, height);
 
         if(view != null)
         {
@@ -1656,13 +1656,14 @@ public class StsGLPanel extends JPanel implements StsGLDrawable, StsSerializable
 	   if(gConfig == null) return null;
 	   return gConfig.getDevice();
     }
-
+/*
 	public void reshape(int x, int y, int width, int height)
 	{
 		//System.out.println("reshape"+x+" "+y+" "+width+" "+height);
-		super.reshape(x,y,width,height);
+		super.setBounds(x,y,width,height);
 		if (glc == null) return;
 		glc.setSize(width,height);
 		repaint();
 	}
+*/
 }

@@ -340,8 +340,10 @@ public class StsViewCursor extends StsView2d implements StsSerializable
           gl.glClear(GL.GL_DEPTH_BUFFER_BIT | GL.GL_COLOR_BUFFER_BIT);
     }
 */
+    /*
     protected void initializeView()
     {
+        gl = glPanel.getGL();
         gl.glShadeModel(GL.GL_FLAT);
         gl.glEnable(GL.GL_ALPHA_TEST);
         gl.glAlphaFunc(GL.GL_GREATER, 0.1f);
@@ -351,7 +353,7 @@ public class StsViewCursor extends StsView2d implements StsSerializable
         computeProjectionMatrix();
         computeModelViewMatrix();
     }
-
+    */
    /** Set the aspect ratio to 1:1. */
    public void aspectRatio()
    {

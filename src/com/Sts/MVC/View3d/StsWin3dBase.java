@@ -977,13 +977,13 @@ public class StsWin3dBase extends StsWindow implements StsSerializable, Componen
      {
 
      }
-
+ /*
      public void reshape(int x, int y, int width, int height)
      {
          //        System.out.println("Frame reshaped.");
          super.reshape(x, y, width, height);
      }
-
+ */
      public void displayPreviousObject(Class c)
      {
          StsObject prevObject = null;

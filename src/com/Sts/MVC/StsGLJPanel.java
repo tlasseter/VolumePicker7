@@ -279,7 +279,7 @@ public class StsGLJPanel extends StsGLPanel implements StsSerializable, GLEventL
         viewPortChanged = false;
         model.enableDisplay();
 		glc.setVisible(false); // jbw hack! for maximize bug
-		glc.reshape(x, y, width, height);
+		glc.setBounds(x, y, width, height);
         //glc.setVisible(true); // jbw no go
 		repaint();
     }
