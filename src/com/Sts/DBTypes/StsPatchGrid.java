@@ -2,13 +2,17 @@ package com.Sts.DBTypes;
 
 import com.Sts.Actions.Wizards.SurfaceCurvature.*;
 import com.Sts.DB.*;
+import com.Sts.MVC.*;
 import com.Sts.MVC.View3d.*;
 import com.Sts.Types.*;
 import com.Sts.Utilities.Seismic.*;
 import com.Sts.Utilities.*;
 
+import static com.Sts.Utilities.StsQuadraticCurvature.FitPoint;
+
 import javax.media.opengl.*;
 import java.awt.*;
+import java.nio.*;
 import java.util.*;
 
 /**
@@ -40,6 +44,25 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	float[][] pointsZ;
 	Connection[][][] gridConnections;
 
+	/* name of current surfaceTexture object*/
+	String surfaceTextureName = null;
+	/** min property value for current texture */
+	transient float propertyMin = 0.0f;
+	/** max property value for current texture */
+	transient float propertyMax = 1.0f;
+
+	transient boolean colorListChanged = true;
+
+	/** Texture color display list */
+	transient int colorDisplayListNum = 0;
+	/** Display lists currently being used for surface geometry */
+	transient boolean usingDisplayLists = false;
+
+	/** display list number for surface fill */
+	transient private int surfDisplayListNum = 0;
+	/** display list number for surface grid lines */
+	transient private int gridDisplayListNum = 0;
+
 	transient PatchPoint[][] patchPoints = null;
 	/** flag indicating this patchGrid has been added to current patchVolume.rowGrids hashmap list; avoids overhead of trying to re-add */
 	transient public boolean rowGridAdded = false;
@@ -48,7 +71,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 
 	transient float[][] values;
 
-	transient int[][] colorIndices;
+	boolean valuesChanged = true;
 
 	transient GridCells gridCells;
 
@@ -75,7 +98,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 	static final byte FILTER_ON_CHI_SQ = 1;
 	static final byte FILTER_ON_STD_DEV = 2;
 
-	static public byte filterType = FILTER_ON_CHI_SQ;
+	static public byte filterType = FILTER_NONE; // FILTER_ON_CHI_SQ;
 
 	static public final float badCurvature = StsQuadraticCurvature.badCurvature;
 	static public final float curvatureTest = StsQuadraticCurvature.curvatureTest;
@@ -1156,7 +1179,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		return zMin;
 	}
 
-	public boolean computeCurvature(byte curveType, int filterSize, int minNPoints)
+	public boolean computeCurvature(byte curveType, int filterSize, int XminNPoints)
 	{
 		dataMin = StsPatchVolume.largeFloat;
 		dataMax = -StsPatchVolume.largeFloat;
@@ -1165,42 +1188,65 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		for (int row = 0; row < nRows; row++)
 			Arrays.fill(values[row], nullValue);
 
+		int minNPoints = StsQuadraticCurvature.nCoefs;
 		if (nPatchPoints < minNPoints) return false;
-
 		int halfWindow = filterSize / 2;
-		// Determine quadratic coefficients for this neighborhood
 
-		float[][] fitPoints = new float[filterSize * filterSize][3];
-		for (int volumeRow = rowMin; volumeRow <= rowMax; volumeRow++)
+		float yMin = getYMin();
+		float yInc = getYInc();
+		float xInc = getXInc();
+		float xMin = getXMin();
+		float y = yMin;
+		// construct FitPatchPoints for all possible points in this patch
+		FitPatchPoint[][] fitPatchPoints = new FitPatchPoint[nRows][nCols];
+		for (int patchRow = 0, volumeRow = rowMin; volumeRow <= rowMax; patchRow++, volumeRow++, y += yInc)
 		{
-			for (int volumeCol = colMin; volumeCol <= colMax; volumeCol++)
+			float x = xMin;
+			for (int patchCol = 0, volumeCol = colMin; volumeCol <= colMax; patchCol++, volumeCol++, x += xInc)
 			{
-				int nFitPoints = 0;  // number of equations
-				int patchPointRow = volumeRow - rowMin;
-				int patchPointCol = volumeCol - colMin;
-				float zc = getPatchPointZ(patchPointRow, patchPointCol);
-				if (zc == StsParameters.nullValue) continue;
-				int patchRowMin = Math.max(0, patchPointRow - halfWindow);
-				int patchRowMax = Math.min(nRows - 1, patchPointRow + halfWindow);
-				int patchColMin = Math.max(0, patchPointCol - halfWindow);
-				int patchColMax = Math.min(nCols - 1, patchPointCol + halfWindow);
-				float y = (patchRowMin - patchPointRow) * patchVolume.yInc;
-				for (int patchRow = patchRowMin; patchRow <= patchRowMax; patchRow++, y += patchVolume.yInc)
+				PatchPoint patchPoint = getGridPatchPoint(patchRow, patchCol);
+				if(patchPoint == null) continue;
+				fitPatchPoints[patchRow][patchCol] = new FitPatchPoint(patchPoint, x, y, patchRow, patchCol);
+			}
+		}
+
+		// Compute curvature for each point from point and neighboring points
+		// we start from each patchPoint and spiral out, generating fitPoints; if enough are found, fit curvature attribute.
+		for (int patchRow = 0, volumeRow = rowMin; volumeRow <= rowMax; patchRow++, volumeRow++, y += yInc)
+		{
+			float x = xMin;
+			for (int patchCol = 0, volumeCol = colMin; volumeCol <= colMax; patchCol++, volumeCol++, x += xInc)
+			{
+				PatchPoint centerPoint = getGridPatchPoint(patchRow, patchCol); // point where we want curvature
+				if(centerPoint == null) continue;
+				FitPatchPoint centerFitPoint = fitPatchPoints[patchRow][patchCol];
+				ArrayList<FitPatchPoint> fitPatchPointsList = new ArrayList<>();
+				fitPatchPointsList.add(centerFitPoint);
+				HashSet<FitPatchPoint> fitPointsSet = new HashSet<>();
+				fitPointsSet.add(centerFitPoint);
+				float zc = centerPoint.z;
+				StsGridBoundingBox boundingBox = new StsGridBoundingBox(false); // boundingBox around points used in fitting
+				int nFitPoints;  // number of equations
+				for(nFitPoints = 0; nFitPoints < fitPatchPointsList.size(); nFitPoints++)
 				{
-					float x = (patchColMin - patchPointCol) * patchVolume.xInc;
-					for (int patchCol = patchColMin; patchCol <= patchColMax; patchCol++, x += patchVolume.xInc)
+					FitPatchPoint fitPatchPoint = fitPatchPointsList.get(nFitPoints);
+					boundingBox.addPoint(fitPatchPoint.row, fitPatchPoint.col);
+					ArrayList<FitPatchPoint> newFitPatchPoints = fitPatchPoint.getConnectedFitPatchPoints(fitPointsSet, fitPatchPoints, xInc, yInc);
+					// add newFitPoints if we don't have sufficient points yet or boundingBox rectangle area is smaller than required area
+					if(nFitPoints+1 < minNPoints || boundingBox.getNRows()*boundingBox.getNCols() < filterSize*filterSize)
 					{
-						float z = pointsZ[patchRow][patchCol];
-						if (z == StsParameters.nullValue) continue;
-						fitPoints[nFitPoints][0] = x;
-						fitPoints[nFitPoints][1] = y;
-						fitPoints[nFitPoints][2] = z - zc;
-						nFitPoints++;
+						fitPatchPointsList.addAll(newFitPatchPoints);
+						fitPointsSet.addAll(newFitPatchPoints);
 					}
 				}
 				if (nFitPoints < minNPoints) continue;
 
-				if (!StsQuadraticCurvature.computeSVD(fitPoints, nFitPoints)) continue;
+				// convert FitPatchPointsList to fitPointsList; would be nice to do this more efficiently/elegantly
+				ArrayList<FitPoint> fitPointsList = new ArrayList<>();
+				for(FitPatchPoint fitPatchPoint : fitPatchPointsList)
+					fitPointsList.add(fitPatchPoint);
+
+				if (!StsQuadraticCurvature.computeSVD(fitPointsList, zc)) continue;
 
 				float val;
 				try
@@ -1221,14 +1267,15 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					{
 						// if(StsPatchVolume.debugPatchGrid) StsException.systemDebug(this, "computeCurvature", "ChiSqr = " + chiSqr + " at volumeRow, volumeCol " + volumeRow + " " + volumeCol);
 						//continue;
-						if (val > 0) val = badCurvature;
-						if (val < 0) val = -badCurvature;
+						// if (val > 0) val = badCurvature;
+						// if (val < 0) val = -badCurvature;
+						val = nullValue;
 					}
 				}
 
-				values[patchPointRow][patchPointCol] = val;
+				values[patchRow][patchCol] = val;
 
-				if (Math.abs(val) > curvatureTest) continue;
+				if (val == nullValue) continue;
 				// ChiSqr filtered vals not used for dataMin / dataMax & Statistics
 				nValuePatchPoints++;
 				sum += val;
@@ -1237,6 +1284,224 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 			}
 		}
 		return nValuePatchPoints > 0;
+	}
+
+	class FitPatchPoint extends FitPoint
+	{
+		int row, col;
+		PatchPoint patchPoint;
+		boolean added = false;
+
+		FitPatchPoint(PatchPoint patchPoint, float x, float y, int row, int col)
+		{
+			super(x, y, patchPoint.z);
+			this.patchPoint = patchPoint;
+			this.row = row;
+			this.col = col;
+		}
+
+		ArrayList<FitPatchPoint> getConnectedFitPatchPoints(HashSet<FitPatchPoint> fitPointsSet, FitPatchPoint[][] fitPatchPoints, float xInc, float yInc)
+		{
+			ArrayList<FitPatchPoint> connectedFitPatchPoints = new ArrayList<>();
+			Connection[] connections = patchPoint.getConnections();
+			for(int i = 0; i < 4; i++)
+			{
+				if(connections[i] == null) continue;
+				PatchPoint connectedPatchPoint = connections[i].getConnectedPoint(patchPoint);
+				int connectedRow = row + nextDRow[i];
+				int connectedCol = col + nextDCol[i];
+				// if we already have a point at this location, don't add this one if it's the same patchPoint
+				if(isInsidePatchRowCol(connectedRow, connectedCol))
+				{
+					FitPatchPoint connectedFitPatchPoint = fitPatchPoints[connectedRow][connectedCol];
+					if(connectedFitPatchPoint != null && !fitPointsSet.contains(connectedFitPatchPoint))
+						connectedFitPatchPoints.add(connectedFitPatchPoint);
+				}
+				else // we are outside the patch, so are using adjacent patch points
+				{
+					FitPatchPoint connectedFitPatchPoint = new FitPatchPoint(patchPoint, x + ccwDCol[i]*xInc, y + ccwDRow[i]*yInc, connectedRow, connectedCol);
+					connectedFitPatchPoints.add(connectedFitPatchPoint);
+				}
+			}
+			return connectedFitPatchPoints;
+		}
+
+		FitPatchPoint getRowColFitPatchPoint(int patchRow, int patchCol, FitPatchPoint[][] fitPatchPoints)
+		{
+			if(!isInsidePatchRowCol(patchRow, patchCol)) return null;
+			return fitPatchPoints[row][col];
+		}
+
+		public int hashCode()
+		{
+			return row*nCols + col;
+		}
+	}
+
+	static class SpiralIterator implements Iterator<int[]>
+	{
+		int nRows;
+		int nCols;
+		int rowMin;
+		int rowMax;
+		int colMin;
+		int colMax;
+		boolean[] sidesOk = new boolean[] { true, true, true, true };
+		boolean spiralOk = true;
+		int side = 0;
+		int row;
+		int col;
+
+		SpiralIterator(int row, int col, int nRows, int nCols)
+		{
+			this.rowMin = row;
+			this.rowMax = row;
+			this.colMin = col;
+			this.colMax = col;
+			this.row = rowMin;
+			this.col = colMin;
+			this.nRows = nRows;
+			this.nCols = nCols;
+		}
+
+		boolean moveSpiral()
+		{
+			boolean spiralOk = false;
+			side = -1;
+			if(rowMin > 0)
+			{
+				rowMin--;
+				spiralOk = true;
+				side = 0;
+			}
+			else
+				sidesOk[0] = false;
+
+			if(colMax < nCols-1)
+			{
+				colMax++;
+				spiralOk = true;
+				if(side == -1)
+					side = 1;
+			}
+			else
+				sidesOk[1] = false;
+
+			if(rowMax < nRows-1)
+			{
+				rowMax++;
+				spiralOk = true;
+				if (side == -1)
+					side = 2;
+			}
+			else
+				sidesOk[2] = false;
+
+			if(colMin > 0)
+			{
+				colMin--;
+				spiralOk = true;
+				if(side == -1)
+					side = 3;
+			}
+			else
+				sidesOk[3] = false;
+
+			if(!spiralOk) return false;
+
+			setSideStart(side);
+			return spiralOk;
+		}
+
+		public boolean hasNext()
+		{
+			return spiralOk;
+		}
+
+		public int[] next()
+		{
+			int[] next = new int[]{row, col};
+			if(nextStep() ||  nextSide() || moveSpiral()) return next;
+			return null;
+		}
+
+		private boolean nextStep()
+		{
+			if(side == 0)
+				return ++col < colMax;
+			else if(side == 1)
+				return ++row < rowMax;
+			else if(side == 2)
+				return --col > colMin;
+			else // side == 3
+				return --row < rowMin;
+		}
+
+		private boolean nextSide()
+		{
+			if (side == 3) return false;
+			for (side = side + 1; side <= 3; side++)
+			{
+				if (sidesOk[side])
+				{
+					setSideStart(side);
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private void setSideStart(int side)
+		{
+			if(side == 0)
+			{
+				row = rowMin;
+				col = colMin;
+			}
+			else if(side == 1)
+			{
+				row = rowMin;
+				col = colMax;
+			}
+			else if(side == 2)
+			{
+				row = rowMax;
+				col = colMax;
+			}
+			else if(side == 3)
+			{
+				row = rowMax;
+				col = colMin;
+			}
+		}
+
+		public void remove() { }
+	}
+
+	public float neighborAverageValue(int patchRow, int patchCol)
+	{
+		float valueSum = 0f;
+		int nValues = 0;
+
+		for(int i = 0; i < 4; i++)
+		{
+			float value = getPointValue(patchRow + ccwDRow[i], patchCol + ccwDCol[i]);
+			if(value != nullValue)
+			{
+				valueSum += value;
+				nValues++;
+			}
+		}
+		if(nValues != 0)
+			return valueSum/nValues;
+		else
+			return nullValue;
+	}
+
+	private float getPointValue(int patchRow, int patchCol)
+	{
+		if(!isInsidePatchRowCol(patchRow, patchCol)) return nullValue;
+		return  values[patchRow][patchCol];
 	}
 
 	public void drawGridLines(GL gl, StsColorscale colorscale, boolean displayCurvature)
@@ -1294,7 +1559,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				if (connection != null)
 				{
 					z = pointsZ[row][col];
-					if (displayCurvature)
+					if (displayCurvature && values != null)
 					{
 						// StsTraceUtilities.getPointTypeColor(patchType).setGLColor(gl);
 						float v = values[row][col];
@@ -1374,7 +1639,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				if (connection != null)
 				{
 					float z = pointsZ[row][col];
-					if (displayCurvature)
+					if (displayCurvature && values != null)
 					{
 						// StsTraceUtilities.getPointTypeColor(patchType).setGLColor(gl);
 						float v = values[row][col];
@@ -1416,7 +1681,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		}
 		catch(Exception e)
 		{
-			StsException.outputWarningException(this, "drawColGridLine", e);
+			StsException.outputWarningException(this, "drawColGridLine", "Failed for col " + col + " row " + row, e);
 		}
 		finally
 		{
@@ -1460,10 +1725,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		if (pointsZ == null) return;
 		if (gridCells == null) gridCells = new GridCells();
 		if (displayCurvature && values != null)
-		{
-			setValues(values);
-			gridCells.drawSurfaceFillValuesWithNulls(gl, displayCurvature, colorscale);
-		}
+			gridCells.drawSurfaceFillValuesWithNulls(gl, colorscale);
 		else
 		{
 			gridCells.drawSurfaceFillWithNulls(gl);
@@ -1494,7 +1756,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		if (displayCurvature && values != null)
 		{
 			setValues(values);
-			gridCells.drawSurfaceFillValuesWithNulls(gl, displayCurvature, colorscale);
+			gridCells.drawSurfaceFillValuesWithNulls(gl, colorscale);
 		}
 		else
 		{
@@ -1799,6 +2061,13 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		return pointsZ[patchRow][patchCol];
 	}
 
+	public float getPatchValue(int patchRow, int patchCol)
+	{
+		if (values == null) return nullValue;
+		if (!isInsidePatchRowCol(patchRow, patchCol)) return nullValue;
+		return values[patchRow][patchCol];
+	}
+
 	public float getCurvature(int volumeRow, int volumeCol, float dataMin, float dataMax)
 	{
 		if (!isInsideRowCol(volumeRow, volumeCol))
@@ -1984,9 +2253,41 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 		}
 
 
-		public void  drawSurfaceFillValuesWithNulls(GL gl, boolean displayCurvature, StsColorscale colorscale)
+		public void  drawSurfaceFillValuesWithNulls(GL gl, StsColorscale colorscale)
 		{
+			try
+			{
+				boolean displayValues = false;
+				if(valuesChanged && values != null)
+				{
+					valuesChanged = false;
+					displayValues = computeGridCellValues(colorscale);
+				}
 
+				drawRowCellsValuesWithNulls(gl, colorscale);
+			}
+			catch(Exception e)
+			{
+				StsException.outputWarningException(this, "drawSurfaceFillWithNulls", e);
+			}
+		}
+
+
+		private boolean computeGridCellValues(StsColorscale colorscale)
+		{
+			try
+			{
+				for (int row = 0; row < nCellRows; row++)
+					for (int col = 0; col < nCellCols; col++)
+						if (gridCells[row][col] != null)
+							gridCells[row][col].computeGridCellValues();
+				return true;
+			}
+			catch(Exception e)
+			{
+				StsException.outputWarningException(this,"computeGridCellValues", e);
+				return false;
+			}
 		}
 
 		public void drawSurfaceFillWithNulls(GL gl)
@@ -2009,6 +2310,45 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				for (int col = 0; col < nCellCols; col++)
 					if(gridCells[row][col] != null)
 						gridCells[row][col].drawCell(gl);
+		}
+
+		private void drawRowCellsValuesWithNulls(GL gl, StsColorscale colorscale)
+		{
+			createColorList(gl, false, colorscale);
+			gl.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+			for (int row = 0; row < nCellRows; row++)
+				for (int col = 0; col < nCellCols; col++)
+					if(gridCells[row][col] != null)
+						gridCells[row][col].drawCellWithValues(gl, colorscale);
+		}
+
+		private void createColorList(GL gl, boolean nullsFilled, StsColorscale colorscale)
+		{
+			float[][] arrayRGBA = computeRGBAArray(nullsFilled, colorscale);
+			int nColors = arrayRGBA[0].length;
+			gl.glPixelMapfv(GL.GL_PIXEL_MAP_I_TO_R, nColors, arrayRGBA[0], 0);
+			gl.glPixelMapfv(GL.GL_PIXEL_MAP_I_TO_G, nColors, arrayRGBA[1], 0);
+			gl.glPixelMapfv(GL.GL_PIXEL_MAP_I_TO_B, nColors, arrayRGBA[2], 0);
+			gl.glPixelMapfv(GL.GL_PIXEL_MAP_I_TO_A, nColors, arrayRGBA[3], 0);
+			gl.glPixelTransferf(GL.GL_MAP_COLOR, 1);
+		}
+
+		private float[][] computeRGBAArray(boolean nullsFilled, StsColorscale colorscale)
+		{
+			Color[] colors = colorscale.getNewColorsInclTransparency();
+			int nColors = colors.length;
+			float[][] arrayRGBA = new float[4][nColors];
+			float[] rgba = new float[4];
+			for (int n = 0; n < nColors; n++)
+			{
+				colors[n].getComponents(rgba);
+				for (int i = 0; i < 4; i++)
+				{
+					arrayRGBA[i][n] = rgba[i];
+				}
+			}
+			return arrayRGBA;
 		}
 
 		public void drawSurfaceFillWithNulls2d(GL gl)
@@ -2218,6 +2558,25 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				return true;
 			}
 
+			private void computeGridCellValues()
+			{
+				int nTriangles = linkTriangles.length;
+				ArrayList<LinkTriangle> connectedTriangles = new ArrayList<>();
+				for(int n = 0; n < nTriangles; n++)
+				{
+					LinkTriangle linkTriangle = linkTriangles[n];
+					connectedTriangles.add(linkTriangle);
+					while(linkTriangle.nextTriangleConnected && n < nTriangles-1)
+					{
+						n++;
+						linkTriangle = linkTriangles[n];
+						connectedTriangles.add(linkTriangle);
+					}
+					setTriangleValues(connectedTriangles);
+					connectedTriangles.clear();
+				}
+			}
+
 			/** given a sequence of triangles ccw from side 0 (which may not adjoin),
 			 *  return the next adjoining triangle by comparing side numbers which equal the index of the first point.
 			 * @param linkTriangles triangle array
@@ -2264,6 +2623,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				{
 					linkTriangle.centerZ = centerPoint.z;
 					linkTriangle.centerNormal = centerPoint.normal;
+					linkTriangle.centerValue = centerPoint.value;
 				}
 			}
 
@@ -2271,15 +2631,25 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 			class CenterPoint
 			{
 				int nPoints = 0;
+				int nValuePoints = 0;
 				ArrayList<float[]> normalList = new ArrayList<>();
 				float z = 0.0f;
 				float[] normal;
+				float value = nullValue;
 
 				CenterPoint() {}
 
 				void add(LinkPoint point)
 				{
 					z += point.z;
+					if(point.value != nullValue)
+					{
+						nValuePoints++;
+						if(value == nullValue)
+							value = point.value;
+						else
+							value += point.value;
+					}
 					point.computeRelativeCellPatchPointNormal();
 					normalList.add(point.normal);
 					nPoints++;
@@ -2288,21 +2658,51 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				void averagePoints()
 				{
 					z /= nPoints;
+					if(value != nullValue)
+						value /= nValuePoints;
 					normal = averageCellPointsNormal(normalList);
+				}
+
+				private float[] averageCellPointsNormal(ArrayList<float[]> gridNormals)
+				{
+					try
+					{
+						float[] normal = StsMath.addVectorsNormalize(gridNormals, 1);
+						return normal;
+					}
+					catch(Exception e)
+					{
+						return verticalNormal;
+					}
 				}
 			}
 
-			private float[] averageCellPointsNormal(ArrayList<float[]> gridNormals)
+			void setTriangleValues(ArrayList<LinkTriangle> connectedTriangles)
 			{
-				try
+				float centerValue = 0.0f;
+				int nValues = 0;
+				// Set the firstPoint; on subsequent iteration through points we will stop there if firstPoint is reached
+				// if this point has a prev point, make prevPoint the firstPoint; otherwise make point the firstPoint
+				LinkPoint point = connectedTriangles.get(0).point;
+				if(point.prevLinkPoint != null)
+					point = point.prevLinkPoint;
+				LinkPoint firstPoint = point;
+				// now iterate through connected points from point to nextPoint;  terminate early if point is firstPoint set above
+				while(point != null)
 				{
-					float[] normal = StsMath.addVectorsNormalize(gridNormals, 1);
-					return normal;
+					point.value = values[point.pointPatchRow][point.pointPatchCol];
+					if(point.value != nullValue)
+					{
+						centerValue += point.value;
+						nValues++;
+					}
+					point = point.nextLinkPoint;
+					if(point == firstPoint) break;
 				}
-				catch(Exception e)
-				{
-					return verticalNormal;
-				}
+				if(nValues > 0) centerValue /= nValues;
+
+				for (LinkTriangle linkTriangle : connectedTriangles)
+					linkTriangle.centerValue = centerValue;
 			}
 
 			LinkPoint createCornerLinkPoint(int row, int col, int ccwIndex)
@@ -2312,7 +2712,10 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				if(!isInsideGridRowCol(row, col)) return null;
 				float z = pointsZ[row][col];
 				if(z == nullValue) return null;
-				return new LinkPoint(StsPatchGrid.this, ccwIndex, row, col, z);
+				float value = nullValue;
+				if(values != null)
+					value = values[row][col];
+				return new LinkPoint(StsPatchGrid.this, ccwIndex, row, col, z, value);
 			}
 
 			/** draw all the existing 4 triangles of the grid cell.
@@ -2329,6 +2732,33 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					for(LinkTriangle triangle : linkTriangles)
 					{
 						isDrawing = triangle.drawTriangle(gl, isDrawing);
+						// no triangle in this quadrant; if drawing: end
+
+					}
+				}
+				catch(Exception e)
+				{
+					StsException.outputWarningException(this, "drawCell", "Failed for linkTriangle " + i, e);
+					if(isDrawing)
+					{
+						gl.glEnd();
+						isDrawing = false;
+					}
+				}
+				finally
+				{
+					if(isDrawing) gl.glEnd();
+				}
+			}
+			void drawCellWithValues(GL gl, StsColorscale colorscale)
+			{
+				boolean isDrawing = false;
+				int i = 0;
+				try
+				{
+					for(LinkTriangle triangle : linkTriangles)
+					{
+						isDrawing = triangle.drawTriangleWithValues(gl, isDrawing, colorscale);
 						// no triangle in this quadrant; if drawing: end
 
 					}
@@ -2393,6 +2823,7 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				LinkPoint prevLinkPoint;
 				LinkPoint nextLinkPoint;
 				float z;
+				float value;
 				float[] normal;
 
 				LinkPoint(StsPatchGrid grid, int[] patchRowCol, int ccwIndex)
@@ -2402,15 +2833,17 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					this.pointPatchCol = patchRowCol[1];
 					this.pointCcwIndex = ccwIndex;
 					z = grid.getPatchPointZ(pointPatchRow, pointPatchCol);
+					value = grid.getPatchValue(pointPatchRow, pointPatchCol);
 				}
 
-				LinkPoint(StsPatchGrid grid, int ccwIndex, int patchRow, int patchCol, float z)
+				LinkPoint(StsPatchGrid grid, int ccwIndex, int patchRow, int patchCol, float z, float value)
 				{
 					this.grid = grid;
 					this.pointPatchRow = patchRow;
 					this.pointPatchCol = patchCol;
 					this.pointCcwIndex = ccwIndex;
 					this.z = z;
+					this.value = value;
 				}
 
 				/** From this linkPoint (this), set the nextLinkPoint if it exists */
@@ -2549,6 +2982,22 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					drawPoint(gl);
 				}
 
+				private void drawPointValueAndNormal(GL gl, StsColorscale colorscale)
+				{
+					setColor(gl, value, colorscale);
+					drawNormal(gl);
+					drawPoint(gl);
+				}
+
+				void setColor(GL gl, float value, StsColorscale colorscale)
+				{
+					if(value == nullValue)
+						colorscale.getStsColor(255).setGLColor(gl);
+					else
+						colorscale.getStsColor(colorscale.getIndexFromValue(value)).setGLColor(gl);
+				}
+
+
 				public String toString()
 				{
 					return " grid " + grid.id + " pointRow " + pointPatchRow + " pointCol " + pointPatchCol +
@@ -2573,6 +3022,8 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 				float centerZ;
 				/** normal of center point: same as other centerNormals for connected group of triangles */
 				float[] centerNormal;
+				/** interpolated attribute value of center point */
+				float centerValue;
 				/** indicates next triangle is not connected to this one */
 				boolean nextTriangleConnected = false;
 				/** if this is a single triangle, it has no connected triangles;
@@ -2663,6 +3114,82 @@ public class StsPatchGrid extends StsXYGridBoundingBox implements Comparable<Sts
 					}
 					gl.glNormal3fv(centerNormal, 0);
 					gl.glVertex3f(centerX, centerY, centerZ);
+				}
+
+				private boolean drawTriangleWithValues(GL gl, boolean isDrawing, StsColorscale colorscale)
+				{
+					if(!isLine)
+					{
+						// Cell is drawn with possibly connected triangles using a triangle fan draw
+						// If we drew the previous triangle and it wasn't split from this one, just drawn the next point and normal
+						// If aren't currently drawing (no previous triangle or it was split from this one at common corner),
+						// then draw the complete triangle.
+						if (!isDrawing)
+						{
+							gl.glBegin(GL.GL_TRIANGLE_FAN);
+							drawCenterPointValueAndNormal(gl, colorscale);
+							point.drawPointValueAndNormal(gl, colorscale);
+							isDrawing = true;
+						}
+						nextPoint.drawPointValueAndNormal(gl, colorscale);
+						// if isDrawing and the first point is split  (doesn't share common point with previous side),
+						// then terminate drawing
+						if(isDrawing && !nextTriangleConnected)
+						{
+							gl.glEnd();
+							isDrawing = false;
+						}
+					}
+					else // link has no side links so draw as a colored line
+					{
+						if(isDrawing) // may be drawing if previous side is a triangle and not split at first point
+						{
+							isDrawing = false;
+							gl.glEnd();
+						}
+						if(point.pointCcwIndex < 2) // don't draw line twice (it will be drawn by both cells on side
+						{
+							gl.glDisable(GL.GL_LIGHTING);
+							gl.glLineWidth(StsGraphicParameters.edgeLineWidthHighlighted);
+							gl.glBegin(GL.GL_LINES);
+							point.drawPoint(gl);
+							nextPoint.drawPoint(gl);
+							gl.glEnd();
+							gl.glEnable(GL.GL_LIGHTING);
+						}
+					}
+					return isDrawing;
+				}
+				private void drawCenterPointValueAndNormal(GL gl, StsColorscale colorscale)
+				{
+					if(debug)
+					{
+						if (centerNormal == null)
+						{
+							StsException.systemDebug(this, "drawCenterPointAndNormal", "normal is null");
+							return;
+						}
+						if (centerZ == nullValue)
+						{
+							StsException.systemDebug(this, "drawCenterPointAndNormal", "z is null");
+							return;
+						}
+					}
+
+					setColor(gl, centerValue, colorscale);
+					gl.glNormal3fv(centerNormal, 0);
+					gl.glVertex3f(centerX, centerY, centerZ);
+				}
+
+				final float getValue(int row, int col) { return values[row][col]; }
+				// final float getCenterValue(int row, int col) { return centerValues[row][col]; }
+
+				void setColor(GL gl, float value, StsColorscale colorscale)
+				{
+					if(value == nullValue)
+						colorscale.getStsColor(255).setGLColor(gl);
+					else
+						colorscale.getStsColor(colorscale.getIndexFromValue(value)).setGLColor(gl);
 				}
 
 				private boolean drawTriangle2dDebug(GL gl, boolean isDrawing)

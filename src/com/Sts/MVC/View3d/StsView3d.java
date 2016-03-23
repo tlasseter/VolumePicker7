@@ -188,6 +188,7 @@ public class StsView3d extends StsView implements StsSerializable
 		gl.glEnable(GL.GL_ALPHA_TEST);
 		gl.glAlphaFunc(GL.GL_GREATER, 0.1f);
 
+		glu = glPanel3d.getGLU();
 		//         glPanel3d.setViewPort();
 
 		is3dOverlay = false;

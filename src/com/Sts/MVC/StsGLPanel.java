@@ -691,7 +691,7 @@ public class StsGLPanel extends JPanel implements StsGLDrawable, StsSerializable
         if(view != null)
         {
             view.reshape(x, y, width, height);
-            view.computeProjectionMatrix();
+            if(gl != null) view.computeProjectionMatrix();
         }
         viewPortChanged = false;
         model.enableDisplay();

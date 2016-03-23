@@ -2,6 +2,8 @@ package com.Sts.Utilities;
 
 import Jama.*;
 
+import java.util.*;
+
 
 /** Computes Coefficients of Quadratic surface using Singular value decomposition */
 public class StsQuadraticCurvature
@@ -63,19 +65,35 @@ public class StsQuadraticCurvature
     *  b: [z]
     */
 
-    static public boolean computeSVD(float fitPoints[][], int nFitPoints)
+    static public class FitPoint
     {
-        points = fitPoints;
-        nPoints = nFitPoints;
+        public float x, y, z;
+
+        public FitPoint() { }
+
+        public FitPoint(float x, float y, float z)
+        {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+    }
+
+    static public boolean computeSVD(ArrayList<FitPoint> fitPoints, float zCenter)
+    {
+        nPoints = fitPoints.size();
         if(nPoints < nCoefs) return false;
-        
+
+        points = new float[nPoints][];
         A = new Matrix(nPoints, nCoefs);
         B = new double[nPoints];
         for (int i = 0; i < nPoints; i++)
         {
-            float x = points[i][0];
-            float y = points[i][1];
-            float z = points[i][2];
+            FitPoint fitPoint = fitPoints.get(i);
+            float x = fitPoint.x;
+            float y = fitPoint.y;
+            float z = fitPoint.z - zCenter;
+            points[i] = new float[] { x, y, z };
             A.set(i, 0, x * x);
             A.set(i, 1, y * y);
             A.set(i, 2, x * y);

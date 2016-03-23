@@ -6,6 +6,7 @@ import com.Sts.Utilities.*;
 
 import java.awt.*;
 import java.awt.event.*;
+import java.util.*;
 
 /**
  * Created by IntelliJ IDEA.
@@ -125,7 +126,7 @@ public class StsSurfaceCurvatureAttribute extends StsSurfaceAttribute
             timer.start();
         }
 
-        float[][] fitPoints = new float[winRows*winCols][3];
+        ArrayList<StsQuadraticCurvature.FitPoint> fitPoints = new ArrayList<>();
         for (int row = 0; row < nRows; row++)
         {
             for (int col = 0; col < nCols; col++)
@@ -144,10 +145,10 @@ public class StsSurfaceCurvatureAttribute extends StsSurfaceAttribute
                         {
                             if (pointsNull[winRow][winCol] == StsSurface.SURF_PNT)
                             {
-		                    	fitPoints[nFitPoints][0] = (winCol-col) * surface.xInc;
-		                    	fitPoints[nFitPoints][1] = (winRow-row) * surface.yInc;
-		                    	fitPoints[nFitPoints][2] = pointsZ[winRow][winCol]-zc;
-		                    	nFitPoints++;
+		                    	float x = (winCol-col) * surface.xInc;
+                                float y = (winRow-row) * surface.yInc;
+                                float z = pointsZ[winRow][winCol];
+		                    	fitPoints.add(new StsQuadraticCurvature.FitPoint(x, y, z));
                             }
                         }
                     }
@@ -157,7 +158,7 @@ public class StsSurfaceCurvatureAttribute extends StsSurfaceAttribute
                         continue;
                     }
 
-                    if(!StsQuadraticCurvature.computeSVD(fitPoints, nFitPoints))continue;
+                    if(!StsQuadraticCurvature.computeSVD(fitPoints, zc))continue;
                     
                     float val;
                     try

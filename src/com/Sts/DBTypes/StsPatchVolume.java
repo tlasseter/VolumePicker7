@@ -797,7 +797,7 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 		float[] values = new float[nPointsTotal];
 		double sum = 0;
 		int progressUpdateInterval = Math.max(numPatches / 200, 1);
-		int minNPoints = Math.min(filterSize * filterSize, StsQuadraticCurvature.minNPoints);
+		int minNPoints = Math.min(filterSize * filterSize/2, StsQuadraticCurvature.minNPoints);
 		for (int i = 0; i < numPatches; i++)
 		{
 			StsPatchGrid patch = runPatches[i];
@@ -809,13 +809,22 @@ public class StsPatchVolume extends StsSeismicBoundingBox implements StsTreeObje
 				{
 					for (int col = patch.colMin; col <= patch.colMax; col++)
 					{
-						int ptCol = col - patch.colMin;
-						int ptRow = row - patch.rowMin;
-						float value = patch.values[ptRow][ptCol];
-						if (value == StsPatchVolume.nullValue) continue;
-						if (value == badCurvature || value == -badCurvature) continue;
-						values[nValuePoints++] = value;
-						sum += value;
+						int patchCol = col - patch.colMin;
+						int patchRow = row - patch.rowMin;
+						float value = patch.values[patchRow][patchCol];
+						if (value == badCurvature || value == -badCurvature)
+							value = nullValue;
+						// if value at this grid point is null, try to set as average of 4 neighbors
+						if(value == nullValue)
+						{
+							value = patch.neighborAverageValue(patchRow, patchCol); // avg value might still be nullValue
+							patch.values[patchRow][patchCol] = value;
+						}
+						if(value != nullValue)
+						{
+							values[nValuePoints++] = value;
+							sum += value;
+						}
 					}
 				}
 			}
@@ -2992,8 +3001,19 @@ class PatchPoint implements Comparable<PatchPoint>
 		return connections;
 	}
 
-	protected Connection getConnection(int i)
+	protected ArrayList<PatchPoint> getConnectedPatchPoints()
 	{
+		ArrayList<PatchPoint> connectedPoints = new ArrayList<>();
+		for(Connection connection : connections)
+		{
+			if(connection != null)
+				connectedPoints.add(connection.getConnectedPoint(this));
+		}
+		return connectedPoints;
+	}
+
+	protected Connection getConnection(int i)
+	{                                        ;
 		if(connections == null) return null;
 		return connections[i];
 	}
@@ -3542,6 +3562,18 @@ class Connection implements Cloneable
 			return nextPoint.patchGrid;
 		else
 			return prevPoint.patchGrid;
+	}
+	/** For this connection and connected point, get the other connection point.
+	 *
+	 * @param point point from which this connection emanates
+	 * @return the other point in the connection
+	 */
+	PatchPoint getConnectedPoint(PatchPoint point)
+	{
+		if(point == prevPoint)
+			return nextPoint;
+		else
+			return prevPoint;
 	}
 
 	public String toString()
